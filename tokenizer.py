@@ -1,7 +1,9 @@
 # Build a base tokenizer class for tokenizing text data
 
-import re
+import regex as re
 from typing import List, Dict, Tuple
+
+SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
 class BaseTokenizer:
     """Tokenizer base class."""
@@ -69,15 +71,15 @@ class BaseTokenizer:
         
         return ids
 
-    def decode(self, tokens: List[int]):
+    def decode(self, tokens: List[int]) -> str:
         """Decode list of tokens to a text string."""
         return b''.join([self.vocab[token] for token in tokens]).decode('utf-8')
     
-    def decode_list(self, tokens: List[int]):
+    def decode_list(self, tokens: List[int]) -> List[str]:
         """Decode list of tokens to a list of strings."""
         return [self.vocab[token].decode('utf-8') for token in tokens]
     
-    def train(self, text: str, verbose: bool = False):
+    def train(self, text: str, verbose: bool = False) -> None:
         """Train tokenizer."""
         UTF8_BYTE = 256
         
@@ -104,33 +106,124 @@ class BaseTokenizer:
         self.bp_merges = merges
         self.vocab = self._get_vocab()
     
-    def save(self, path: str):
+    def save(self, path: str) -> None:
         """Save tokenizer."""
-        raise NotImplementedError
+        
+        with open(path, 'w') as f:
+            f.write(f"{self.vocab_size}\n")
+            f.write(f"{self.special_tokens}\n")
+            f.write(f"{self.bp_merges}\n")
     
-    def load(self, path: str):
+    def load(self, path: str) -> None:
         """Load tokenizer."""
-        raise NotImplementedError
-    
+        
+        with open(path, 'r') as f:
+            self.vocab_size = int(f.readline())
+            self.special_tokens = eval(f.readline())
+            self.bp_merges = eval(f.readline())
+
+        self.vocab = self._get_vocab()
+
+class RegExTokenizer(BaseTokenizer):
+
+    def __init__(self, vocab_size: int = 800, pattern: str = SPLIT_PATTERN):
+        super().__init__(vocab_size)
+        self.split_pattern = pattern
+        self.re_pattern = re.compile(self.split_pattern)
+
+        self.special_tokens = {}
+        self.inv_special_tokens = {}
+
+    def train(self, text: str, verbose: bool = False) -> None:
+        """Train tokenizer."""
+        UTF8_BYTE = 256
+        
+        # Tokenize text using the vocab and a utf-8 encoding
+        re_splits = re.findall(self.re_pattern, text) # Initially split text based on regex pattern
+        ids = [list(split.encode('utf-8')) for split in re_splits]
+
+        n_merges = self.vocab_size - UTF8_BYTE - len(self.special_tokens)
+        merges = {}
+        
+        # Iterate through the token pairs and merge them
+        for i in range(n_merges):
+            
+            stats = {}
+            for split in ids:
+                stats.update(self._get_stats(split)) # Update stats each regex split at a time
+            
+            if not stats:
+                break
+                
+            best_pair = max(stats, key=stats.get) # Find most common pair
+
+            new_id = UTF8_BYTE + i
+            ids = [self._merge_tokens(split, best_pair, new_id) for split in ids]
+            merges[best_pair] = new_id
+
+            if verbose:
+                print(f"Training merge {i+1}/{n_merges}: {best_pair} -> {new_id}")
+            
+        self.bp_merges = merges
+        self.vocab = self._get_vocab() 
+
+    def encode(self, text: str) -> List[int]:
+        """Produce a list of tokens from a text string."""
+        
+        # Tokenize text using the vocab and a utf-8 encoding
+        re_splits = re.findall(self.re_pattern, text)
+
+        ids = []
+        for split in re_splits:
+            ids.extend(self._encode_split(split))
+        
+        return ids
+
+    def _encode_split(self, split: str) -> List[int]:
+        """Encode a single split of text."""
+        
+        ids = [id for id in split.encode('utf-8')]
+        while True:
+            
+            if len(ids) < 2:
+                break
+
+            stats = self._get_stats(ids)
+            merge_pair = min(stats, key=lambda x: self.bp_merges.get(x, float('inf')))
+
+            if merge_pair not in self.bp_merges:
+                break
+
+            new_id = self.bp_merges[merge_pair]
+            ids = self._merge_tokens(ids, merge_pair, new_id)
+
+        return ids
+
+    def decode(self, tokens: List[int]) -> str:
+        """Decode list of tokens to a text string."""
+        return ''.join([self.vocab[token].decode('utf-8', errors='replace') for token in tokens])
+
+    def decode_list(self, tokens: List[int]) -> List[str]:
+        """Decode list of tokens to a list of strings."""
+        return [self.vocab[token].decode('utf-8', errors='replace') for token in tokens]
 
 
 if __name__ == "__main__":
 
-    tokenizer = BaseTokenizer(vocab_size=1000)
-    
-    print('Reading Tokenizer training data...')
+    # with open('final_png_formulas.txt', 'r') as f:
+    #     text = f.read()[:1000000]
 
-    with open('final_png_formulas.txt', 'r') as f:
-        text = f.read()[:1000000]
+    # print('Read complete.')
 
-    print('Read complete.')
+    tokenizer = RegExTokenizer(vocab_size=1000)
+    tokenizer.load('tokenizer.txt')
 
-    print('Training Tokenizer...')
-    tokenizer.train(text, verbose=True)
-
-    test_str = r"\left( \mathcal { N } _ { 1 } e ^ { - \xi M _ { 1 } \xi - \xi \lambda _ { 1 } } \right) * \left( \mathcal { N } _ { 2 } e ^ { - \xi M _ { 2 } \xi - \xi \lambda _ { 2 } } \right) = \mathcal { N }"
+    test_str = r"\Lambda _ { \, \, \nu } ^ { \mu } = \frac { 1 } { 2 } t r ( \rho ^ { \mu } A \sigma _ { \nu } A ^ { \dagger } ) \, ."
     tokens = tokenizer.encode(test_str)
-    
-    print(test_str)
+
     print(tokens)
-    print(tokenizer.decode_list(tokens))
+    print(f'Length of test string: {len(test_str)}')
+    print(f'Number of tokens: {len(tokens)}')
+    print(f'Compression ratio: {len(test_str) / len(tokens):.2f}x')
+    new_test_list = tokenizer.decode_list(tokens)
+    print(new_test_list)
