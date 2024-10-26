@@ -1,5 +1,3 @@
-# Build a base tokenizer class for tokenizing text data
-
 import regex as re
 from typing import List, Dict, Tuple
 
@@ -32,7 +30,9 @@ class BaseTokenizer:
         """Given a list of token IDs, return a dictionary of token pairs and their counts."""
         stats = {}
         for i in range(1, len(ids)):
-            stats[(ids[i-1], ids[i])] = stats.get((ids[i-1], ids[i]), 0) + 1
+            sp = self.special_tokens.values()
+            if ids[i-1] not in sp and ids[i] not in sp:
+                stats[(ids[i-1], ids[i])] = stats.get((ids[i-1], ids[i]), 0) + 1
         return stats
     
     def _merge_tokens(self, ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
@@ -126,13 +126,13 @@ class BaseTokenizer:
 
 class RegExTokenizer(BaseTokenizer):
 
-    def __init__(self, vocab_size: int = 800, pattern: str = SPLIT_PATTERN):
+    def __init__(self, vocab_size: int = 800, pattern: str = SPLIT_PATTERN, special_tokens: Dict[str, int] = {}):
         super().__init__(vocab_size)
         self.split_pattern = pattern
         self.re_pattern = re.compile(self.split_pattern)
 
-        self.special_tokens = {}
-        self.inv_special_tokens = {}
+        self.special_tokens = special_tokens
+        self.inv_special_tokens = {v: k for k, v in special_tokens.items()}
 
     def train(self, text: str, verbose: bool = False) -> None:
         """Train tokenizer."""
@@ -155,10 +155,10 @@ class RegExTokenizer(BaseTokenizer):
             if not stats:
                 break
                 
-            best_pair = max(stats, key=stats.get) # Find most common pair
+            best_pair = max(stats, key=stats.get) # Find most common pair                                                   
 
-            new_id = UTF8_BYTE + i
-            ids = [self._merge_tokens(split, best_pair, new_id) for split in ids]
+            new_id = UTF8_BYTE + len(self.special_tokens) + i                                                       
+            ids = [self._merge_tokens(split, best_pair, new_id) for split in ids]                               
             merges[best_pair] = new_id
 
             if verbose:
@@ -168,6 +168,24 @@ class RegExTokenizer(BaseTokenizer):
         self.vocab = self._get_vocab() 
 
     def encode(self, text: str) -> List[int]:
+        """Produce a list of tokens from a text string. Handles special tokens."""
+        
+        if len(self.special_tokens) == 0:
+            return self._encode_text(text)
+        
+        special_pattern = '(' + '|'.join([re.escape(token) for token in self.special_tokens]) + ')'
+        special_splits = re.split(special_pattern, text)
+
+        ids = []
+        for split in special_splits:
+            if split in self.special_tokens:
+                ids.append(self.special_tokens[split])
+            else:
+                ids.extend(self._encode_text(split))
+
+        return ids
+
+    def _encode_text(self, text: str) -> List[int]:
         """Produce a list of tokens from a text string."""
         
         # Tokenize text using the vocab and a utf-8 encoding
@@ -199,26 +217,38 @@ class RegExTokenizer(BaseTokenizer):
 
         return ids
 
-    def decode(self, tokens: List[int]) -> str:
+    def decode_list(self, tokens: List[int]) -> str:
         """Decode list of tokens to a text string."""
-        return ''.join([self.vocab[token].decode('utf-8', errors='replace') for token in tokens])
+        
+        byte_list = []
+        for token in tokens:
+            if token in self.inv_special_tokens:
+                byte_list.append(self.inv_special_tokens[token].encode('utf-8'))
+            elif token in self.vocab:
+                byte_list.append(self.vocab[token])
+            else:
+                raise ValueError(f"Token {token} not found in vocabulary.")
+        
+        return [byte.decode('utf-8', errors='replace') for byte in byte_list]
 
-    def decode_list(self, tokens: List[int]) -> List[str]:
+    def decode(self, tokens: List[int]) -> List[str]:
         """Decode list of tokens to a list of strings."""
-        return [self.vocab[token].decode('utf-8', errors='replace') for token in tokens]
+        return ''.join(self.decode_list(tokens))
 
 
 if __name__ == "__main__":
 
-    # with open('final_png_formulas.txt', 'r') as f:
-    #     text = f.read()[:1000000]
+    with open('final_png_formulas.txt', 'r') as f:
+        text = f.read()[:1000000]
 
-    # print('Read complete.')
 
-    tokenizer = RegExTokenizer(vocab_size=1000)
+    print('Read complete.')
+    special_tokens = {'<PAD>': 999}
+
+    tokenizer = RegExTokenizer(vocab_size=1000, special_tokens=special_tokens)
     tokenizer.load('tokenizer.txt')
 
-    test_str = r"\Lambda _ { \, \, \nu } ^ { \mu } = \frac { 1 } { 2 } t r ( \rho ^ { \mu } A \sigma _ { \nu } A ^ { \dagger } ) \, ."
+    test_str = r"\Lambda _ { \, \, \nu } ^ { \mu } = \frac { 1 } { 2 } t r ( \rho ^ { \mu } A \sigma _ { \nu } A ^ { \dagger } ) \, .<PAD><PAD><PAD><PAD><PAD><PAD><PAD><PAD><PAD>"
     tokens = tokenizer.encode(test_str)
 
     print(tokens)
@@ -227,3 +257,4 @@ if __name__ == "__main__":
     print(f'Compression ratio: {len(test_str) / len(tokens):.2f}x')
     new_test_list = tokenizer.decode_list(tokens)
     print(new_test_list)
+
