@@ -1,4 +1,5 @@
 import os
+import random
 from pathlib import Path
 from typing import Dict, List, Tuple, Callable, Any
 
@@ -12,15 +13,44 @@ from torchvision import transforms
 from tokenizer import BaseTokenizer, RegExTokenizer
 from PIL import Image
 
+def random_split(dataset: Dataset, train_split: float = 0.8, test_split: float = 0.1, val: bool = True, seed: int = 42) -> Tuple[Dataset, Dataset, Dataset]:
+    """Split a dataset into training, validation, and test sets."""
+    dataset_size = len(dataset)
+    indices = list(range(dataset_size))
+
+    random.seed(seed)
+    random.shuffle(indices)
+
+    if val:
+        assert train_split + test_split < 1.0, "Train and test sizes must sum to less than 1.0."
+    else:
+        assert train_split + test_split == 1.0, "Train and test sizes must sum to 1.0 with no validation set."
+
+    train_end = int(train_split * dataset_size)
+    test_end = train_end + int(test_split * dataset_size) if val else dataset_size
+
+    train_indices = indices[:train_end]
+    test_indices = indices[train_end:test_end]
+    val_indices = indices[test_end:] if val else None
+
+    train_set = dataset.subset(train_indices)
+    test_set = dataset.subset(test_indices)
+    if val:
+        val_set = dataset.subset(val_indices)
+
+    return (train_set, test_set, val_set) if val else (train_set, test_set, None)
 
 class BatchCollator(object):
     """Batch collator for the DataLoader. Pads each batch to the maximum sequence length."""
-    def __init__(self, pad_token: int):
+    def __init__(self, pad_token: int, shuffle: bool = False, seed: int = 42):
         """
         Args:
             pad_token: Padding token id.
         """
         self.pad_token = pad_token
+        self.shuffle = shuffle
+        self.starting_seed = seed
+        self.seed = seed
 
     def __call__(self, batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -28,6 +58,16 @@ class BatchCollator(object):
             batch: List of tuples containing images and labels, sampled from the Dataset.
         """
         images, seq = zip(*batch)
+
+        if self.shuffle:
+            random.seed(self.seed)
+            indices = list(range(len(images)))
+            random.shuffle(indices)
+            self.seed += 1
+
+            images = [images[i] for i in indices]
+            seq = [seq[i] for i in indices]
+
         images = torch.stack(images)
         
         # Pad labels
@@ -74,7 +114,7 @@ class ImageDataset(Dataset):
     pad_char = '<PAD>'
     fixed_height = 160
 
-    def __init__(self, root_dir: str, tokenizer_path: str, dataset_size: int, patch_size: int = 16, batch_size: int = 32):
+    def __init__(self, root_dir: str, tokenizer_path: str, dataset_size: int, patch_size: int = 16):
         """
         Args:
             root_dir: Path to the root directory containing the image data.
@@ -87,6 +127,7 @@ class ImageDataset(Dataset):
         self.dataset_size = dataset_size
         
         # Load tokenizer
+        self.tokenizer_path = tokenizer_path
         self.tokenizer = RegExTokenizer()
         self.tokenizer.load(tokenizer_path)
 
@@ -99,6 +140,7 @@ class ImageDataset(Dataset):
         # Load image ids and labels from respective files
         self.image_ids = self._load_ids()
         self.labels = self._load_labels()
+        self.images = self.load_images()
 
         # Get maximum height, width and sequence length
         self.max_height, self.max_width = self.get_max_dims()
@@ -120,10 +162,6 @@ class ImageDataset(Dataset):
             transforms.Resize(size=h, max_size=w),
             ImagePadding(h, w)
         ])
-
-        # Label padding 
-        pad_token = self.tokenizer.special_tokens[self.pad_char]
-        # self.label_transform = SequencePadding(self.max_seq_len, pad_value=pad_token)
 
     def nearest_patch_multiple(self, patch_size: int, height: int, width: int) -> Tuple[int, int]:
         """Calculate the nearest multiple of the patch size for the height and width of the image. Round up."""
@@ -180,6 +218,26 @@ class ImageDataset(Dataset):
         
         return labels
     
+    def load_images(self) -> List:
+        """Load images from the images directory."""
+        images = []
+        for image_id in self.image_ids:
+            image_path = self.images_path / image_id
+            image = Image.open(image_path)
+            images.append(image)
+
+        return images
+    
+    def subset(self, ids: List[int]) -> Dataset:
+        """Create a subset of the dataset using a list of indices."""
+        subset = ImageDataset(root_dir=self.root_dir, tokenizer_path=self.tokenizer_path, dataset_size=len(ids))
+        subset.image_ids = [self.image_ids[i] for i in ids]
+        subset.labels = [self.labels[i] for i in ids]
+        subset.images = [self.images[i] for i in ids]
+        subset.img_transform = self.img_transform
+
+        return subset
+    
     def __len__(self) -> int:
         """Return the length of the dataset."""
         return self.dataset_size
@@ -191,11 +249,8 @@ class ImageDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # Get the image path
-        image_path = self.images_path / self.image_ids[idx]
-
         # Load the image
-        image = Image.open(image_path).convert('RGB')
+        image = self.images[idx]
 
         # Apply transform if it exists
         image = self.img_transform(image)
@@ -203,15 +258,20 @@ class ImageDataset(Dataset):
         label_str = self.labels[idx] # Get LaTeX string
         label_enc = torch.tensor(self.tokenizer.encode(label_str), dtype=torch.long) # Encode LaTeX string to tokens
 
-        # Apply label transform
-        # label_enc = self.label_transform(label_enc)
-
         return image, label_enc
+    
+    def __str__(self) -> str:
+        """Return a string representation of the dataset."""
+        return f"ImageDataset with {len(self)} samples."
+    
+    def __repr__(self) -> str:
+        """Return a string representation of the dataset."""
+        return f"ImageDataset with {len(self)} samples."
     
 
 class BucketBatchSampler(BatchSampler):
     """Batch sampler that batches samples of similar sequence length together."""
-    def __init__(self, dataset: Dataset, batch_size: int, drop_last: bool = False):
+    def __init__(self, dataset: Dataset, batch_size: int, drop_last: bool = False, shuffle: bool = False, seed: int = 42):
         """
         Initialize the sampler.
         
@@ -219,6 +279,7 @@ class BucketBatchSampler(BatchSampler):
             dataset: Dataset to sample from.
             batch_size: Size of the batch.
             drop_last: Whether to drop the last batch if it is smaller than batch_size.
+            shuffle: Whether to shuffle the batches.
         """
         super(BucketBatchSampler, self).__init__(dataset, batch_size, drop_last)
 
@@ -227,6 +288,9 @@ class BucketBatchSampler(BatchSampler):
 
         self.batch_size = batch_size
         self.drop_last = drop_last
+        self.shuffle = shuffle
+        self.starting_seed = seed
+        self.seed = seed
 
     def _sort_indices(self, dataset: Dataset) -> List[int]:
         """Sort the indices of the dataset by sequence length."""
@@ -236,15 +300,30 @@ class BucketBatchSampler(BatchSampler):
         return indices
 
     def __iter__(self):
+        batches = []
         batch = []
         for idx in self.sorted_indices:
             batch.append(idx)
             if len(batch) == self.batch_size:
-                yield batch
+                batches.append(batch)
                 batch = []
         
         if len(batch) > 0 and not self.drop_last:
+            batches.append(batch)
+
+        if self.shuffle:
+            # random.seed(self.seed)
+            # random.shuffle(batches)
+
+            # Want to shuffle the batches such that I can control with a seed BUT it shuffles differently after each epoch
+            rng = random.Random(self.seed)
+            rng.shuffle(batches)
+            self.seed += 1
+
+        for batch in batches:
             yield batch
+
+
 
     def __len__(self):
         if self.drop_last:
@@ -252,19 +331,84 @@ class BucketBatchSampler(BatchSampler):
         else:
             return (len(self.sorted_indices) + self.batch_size - 1) // self.batch_size
         
+class DatasetSplits(object):
+    """Class for managing dataset splits."""
+    def __init__(self, dataset: Dataset, train_split: float = 0.8, test_split: float = 0.1, val_split: float = 0.1, seed: int = 42):
+        """
+        Args:
+            dataset: Dataset to split.
+            train_size: Size of the training set.
+            val_size: Size of the validation set.
+            test_size: Size of the test set.
+            batch_size: Size of the batch
+        """
+        self.dataset = dataset
+
+        assert train_split + val_split + test_split == 1.0, "Train, validation, and test split sizes must sum to 1.0."
+        self.train_split = train_split
+        self.val_split = val_split
+        self.test_split = test_split
+        self.seed = seed
+
+        # Calculate the sizes of the splits
+        self.train_size = int(train_split * len(dataset))
+        self.test_size = int(test_split * len(dataset))
+        self.val_size = len(dataset) - self.train_size - self.test_size
+        print(f"Train size: {self.train_size}, Val size: {self.val_size}, Test size: {self.test_size}")
+
+        # Split the dataset
+        self.train_set, self.val_set, self.test_set = self._split_dataset()
+        print(self.train_set, self.val_set, self.test_set)
+
+    def _split_dataset(self) -> Tuple[Dataset, Dataset, Dataset]:
+        """Split the dataset into training, validation, and test sets."""
+        train_set, val_set, test_set = random_split(self.dataset, self.train_split, self.test_split, val=True, seed=self.seed)
+
+        return train_set, val_set, test_set
+
+    def splits(self) -> Tuple[Dataset, Dataset, Dataset]:
+        """Return the training, validation, and test sets."""
+        return self.train_set, self.val_set, self.test_set
+
+    def loaders(self, 
+                batch_size: int, 
+                drop_last: bool = False, 
+                batch_shuffle: bool = False, 
+                id_shuffle: bool = False
+        ) -> Tuple[DataLoader, DataLoader, DataLoader]:
+        """
+        Args:
+            batch_size: Size of the batch.
+            drop_last: Whether to drop the last batch if it is smaller than batch_size.
+            batch_shuffle: Whether to shuffle the batches.
+            id_shuffle: Whether to shuffle the indices within each batch.
+        """
+        collate_fn = BatchCollator(self.dataset.tokenizer.special_tokens[self.dataset.pad_char], shuffle=id_shuffle, seed=self.seed)
+
+        train_sampler = BucketBatchSampler(self.train_set, batch_size=batch_size, drop_last=drop_last, shuffle=batch_shuffle, seed=self.seed)
+        train_loader = DataLoader(self.train_set, batch_sampler=train_sampler, collate_fn=collate_fn)
+
+        val_sampler = BucketBatchSampler(self.val_set, batch_size=batch_size, drop_last=drop_last, shuffle=batch_shuffle, seed=self.seed)
+        val_loader = DataLoader(self.val_set, batch_sampler=val_sampler, collate_fn=collate_fn)
+
+        test_sampler = BucketBatchSampler(self.test_set, batch_size=batch_size, drop_last=drop_last, shuffle=batch_shuffle, seed=self.seed)
+        test_loader = DataLoader(self.test_set, batch_sampler=test_sampler, collate_fn=collate_fn)
+
+        return train_loader, val_loader, test_loader
+        
     
 if __name__ == '__main__':
 
     # Test the ImageDataset class
-    dataset = ImageDataset(root_dir='data', tokenizer_path='tokenizer.txt', dataset_size=1000)
+    dataset = ImageDataset(root_dir='data', tokenizer_path='tokenizer.txt', dataset_size=320, patch_size=32)
     
     # Test the BucketBatchSampler and BatchCollator classes
-    batch_sampler = BucketBatchSampler(dataset, batch_size=32)
-    collate_fn = BatchCollator(dataset.tokenizer.special_tokens[dataset.pad_char])
-    dataloader = DataLoader(dataset, batch_sampler=batch_sampler, collate_fn=collate_fn)
+    splits = DatasetSplits(dataset, train_split=0.8, val_split=0.1, test_split=0.1, seed = 7)
+    train_loader, val_loader, test_loader = splits.loaders(batch_size=32, drop_last=False, batch_shuffle=True, id_shuffle=True)
 
-    for i, (images, labels) in enumerate(dataloader):
-        if i == 20:
+
+    for i, (images, labels) in enumerate(train_loader):
+        if i == 0:
             print(images.shape)
             print(labels.shape)
 
@@ -279,9 +423,9 @@ if __name__ == '__main__':
 
             # Plot a 16*16 grid over the image
             h, w = images.shape[2], images.shape[3]
-            for i in range(15, h*4, 16):
+            for i in range(32, h*4, 32):
                 plt.axhline(i, color='r', linewidth=0.3)
-            for i in range(15, w*8, 16):
+            for i in range(32, w*8, 32):
                 plt.axvline(i, color='r', linewidth=0.3)
 
             # Scale up axes by 2
@@ -292,3 +436,9 @@ if __name__ == '__main__':
             plt.show()
 
             break
+
+        # if i in [0]:
+        #     print(images.shape)
+        #     print(labels.shape)
+        #     print(labels)
+        #     break
