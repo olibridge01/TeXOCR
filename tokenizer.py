@@ -1,7 +1,8 @@
+import argparse
 import regex as re
 from typing import List, Dict, Tuple
 
-SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+| ?\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
 class BaseTokenizer:
     """Tokenizer base class."""
@@ -124,8 +125,9 @@ class BaseTokenizer:
 
         self.vocab = self._get_vocab()
 
-class RegExTokenizer(BaseTokenizer):
 
+class RegExTokenizer(BaseTokenizer):
+    """Tokenizer using a regex pattern to initially split text before tokenization."""
     def __init__(self, vocab_size: int = 800, pattern: str = SPLIT_PATTERN, special_tokens: Dict[str, int] = {}):
         super().__init__(vocab_size)
         self.split_pattern = pattern
@@ -157,7 +159,7 @@ class RegExTokenizer(BaseTokenizer):
                 
             best_pair = max(stats, key=stats.get) # Find most common pair                                                   
 
-            new_id = UTF8_BYTE + len(self.special_tokens) + i                                                       
+            new_id = UTF8_BYTE + i                                                       
             ids = [self._merge_tokens(split, best_pair, new_id) for split in ids]                               
             merges[best_pair] = new_id
 
@@ -234,27 +236,67 @@ class RegExTokenizer(BaseTokenizer):
     def decode(self, tokens: List[int]) -> List[str]:
         """Decode list of tokens to a list of strings."""
         return ''.join(self.decode_list(tokens))
+    
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Train a BPE tokenizer.')
+    parser.add_argument('-v', '--vocab_size', type=int, default=8000, help='Size of the vocabulary.')
+    parser.add_argument('-t', '--train', action='store_true', help='Train tokenizer.')
+    parser.add_argument('-d', '--train_data', type=str, default=None, help='Path to training data.')
+    parser.add_argument('-s', '--save', type=str, default=None, help='Path to tokenizer save file.')
+    parser.add_argument('-l', '--load', type=str, default=None, help='Path to tokenizer load file.')
+    parser.add_argument('--special', type=str, default=None, help='Path to special tokens file.')
+    parser.add_argument('--test_str', type=str, default=None, help='Test string to encode.')
+    parser.add_argument('--verbose', action='store_true', help='Verbose mode.')
+    args = parser.parse_args()
+
+    if args.train:
+        assert args.save is not None, "Must provide a save path when training."
+        # assert args.train_data is not None, "Must provide a training data path when training."
+    else:
+        assert args.load is not None, "Must provide a load path when not training."
+        assert args.test_str is not None, "Give me a test string to encode if not training!"
+
+    return args
+
+
+def main(args: argparse.Namespace):
+    """Execute tokenizer training or testing."""
+    special_tokens = {}
+    if args.special is not None:
+        with open(args.special, 'r') as f:
+            for i, line in enumerate(f):
+                token = line.strip()
+                token_id = args.vocab_size - i - 1
+                special_tokens[token] = token_id
+
+    tokenizer = RegExTokenizer(vocab_size=args.vocab_size, special_tokens=special_tokens)
+
+    if args.train:
+        with open('data/labels.txt', 'r') as f:
+            text = f.read()[:5000000]
+        
+        tokenizer.train(text, verbose=args.verbose)
+        tokenizer.save(args.save)
+    else:
+        tokenizer.load(args.load)
+        tokens = tokenizer.encode(args.test_str)
+
+        print(f'Length of test string: {len(args.test_str)}')
+        print(f'Number of tokens: {len(tokens)}')
+        print(f'Compression ratio: {len(args.test_str) / len(tokens):.2f}x')
+        print('')
+        print(f"Encoded tokens: {tokens}")
+        decoded = tokenizer.decode_list(tokens)
+        print(f"Decoded string: {decoded}")
+
+        # Join decoded together and omit all whitespace
+        decoded_str = ''.join(decoded).replace(' ', '')
+        print(f"Output: {decoded_str}")
 
 
 if __name__ == "__main__":
 
-    with open('final_png_formulas.txt', 'r') as f:
-        text = f.read()[:1000000]
-
-
-    print('Read complete.')
-    special_tokens = {'<PAD>': 999}
-
-    tokenizer = RegExTokenizer(vocab_size=1000, special_tokens=special_tokens)
-    tokenizer.load('tokenizer.txt')
-
-    test_str = r"\Lambda _ { \, \, \nu } ^ { \mu } = \frac { 1 } { 2 } t r ( \rho ^ { \mu } A \sigma _ { \nu } A ^ { \dagger } ) \, .<PAD><PAD><PAD><PAD><PAD><PAD><PAD><PAD><PAD>"
-    tokens = tokenizer.encode(test_str)
-
-    print(tokens)
-    print(f'Length of test string: {len(test_str)}')
-    print(f'Number of tokens: {len(tokens)}')
-    print(f'Compression ratio: {len(test_str) / len(tokens):.2f}x')
-    new_test_list = tokenizer.decode_list(tokens)
-    print(new_test_list)
-
+    args = parse_args()
+    main(args)
