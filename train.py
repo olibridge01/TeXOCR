@@ -8,8 +8,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from model import OCRModel
+from test import test_model
 from utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint
-from dataset import ImageDataset, DatasetSplits, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
+from dataset import ImagePadding, ImageDataset, DatasetSplits, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -90,7 +91,10 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
             print(f'Epoch {epoch+1}/{n_epochs} - Loss: {epoch_loss / len(train_loader)}')
 
         if config['save_checkpoint'] and (epoch+1) % config['save_freq'] == 0:
-            save_checkpoint(model, optimizer, epoch, config)
+            save_checkpoint(model, optimizer, epoch, 'checkpoints')
+
+        if (epoch+1) % config['val_freq'] == 0:
+            test_model(val_loader, model, device, verbose=True)
 
     end = time.time()
     if verbose:

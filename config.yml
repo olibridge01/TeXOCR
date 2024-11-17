@@ -1,5 +1,5 @@
 batch_shuffle: true
-batch_size: 64
+batch_size: 128
 dataset_size: 50000
 decoder:
   dropout: 0.1
@@ -8,7 +8,7 @@ decoder:
   heads: 8
   num_layers: 4
 device: cpu
-drop_last: false
+drop_last: true
 encoder:
   dropout: 0.1
   embed_dim: 256
@@ -29,9 +29,10 @@ save_checkpoint: true
 save_dir: checkpoints
 save_freq: 1
 seed: 42
-src_pad_idx: 255
+src_pad_idx: 1
 test_split: 0.1
-tokenizer_path: tokenizer_1k.txt
+tokenizer_path: tokenizer_clean_1k.txt
 train_split: 0.8
 trg_pad_idx: 999
+val_freq: 1
 val_split: 0.1
