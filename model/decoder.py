@@ -262,25 +262,6 @@ class TransformerDecoder(nn.Module):
         out = self.fc_out(x)
 
         return out
-    
-    def generate(self, start_token, max_length, eos_token):
-        """
-        Args:
-            start_token: Start token.
-            max_length: Maximum length.
-            eos_token: End of sequence token.
-        """
-
-        trg_tensor = torch.tensor([start_token]).unsqueeze(0).to(self.device)
-        for i in range(max_length):
-            trg_mask = self.make_trg_mask(trg_tensor)
-            out = self.forward(trg_tensor, trg_mask)
-            out = out.argmax(2)[:, -1].item()
-            trg_tensor = torch.cat((trg_tensor, torch.tensor([[out]]).to(self.device)), dim=1)
-            if out == eos_token:
-                break
-
-        return trg_tensor
         
 
     

@@ -1,5 +1,6 @@
 import argparse
 import time as time
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -7,16 +8,16 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from model import OCRModel
-from test import test_model
-from utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint
-from dataset import ImagePadding, ImageDataset, DatasetSplits, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
+from TeXOCR.model import OCRModel
+from TeXOCR.test import test_model
+from TeXOCR.utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint
+from TeXOCR.dataset import ImagePadding, Invert, ImageDataset, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Train TeXOCR model.')
     parser.add_argument('-d', '--data_dir', type=str, default='data', help='Path to the directory containing dataset pickle files.')
-    parser.add_argument('--config', type=str, default='config.yml', help='Path to the configuration file.')
+    parser.add_argument('--config', type=str, default='config/config.yml', help='Path to the configuration file.')
     return parser.parse_args()
 
 def main(args: argparse.Namespace):
@@ -62,28 +63,30 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
         model.train()
         epoch_loss = 0
         
-        for i, batch in enumerate(train_loader):
+        for i, batch in enumerate(tqdm(train_loader, desc=f'Epoch {epoch+1}/{n_epochs}')):
 
-            if verbose and i % 10 == 0:
-                print(f'Batch {i+1}/{len(train_loader)}')
+            # if verbose:
+            #     print(f'Batch {i+1}/{len(train_loader)}')
             
             images, targets = batch
             images = images.to(device)
             targets = targets.to(device)
+
+            print(f'Images shape: {images.shape}')
             
             optimizer.zero_grad()
             
             output = model(images, targets[:, :-1])
             
-            output_dim = output.shape[-1]
-            
-            output = output.contiguous().view(-1, output_dim)
-            targets = targets[:, 1:].contiguous().view(-1)
+            output = output.transpose(1, 2)
+            targets = targets[:, 1:]
             
             loss = criterion(output, targets)
             
             loss.backward()
             optimizer.step()
+
+            print(f'Loss: {loss.item()}')
             
             epoch_loss += loss.item()
         

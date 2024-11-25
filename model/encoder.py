@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import einops
 
-from model.decoder import TransformerBlock
+from TeXOCR.model.decoder import TransformerBlock
 
 class InputEmbedding(nn.Module):
     """Embedding layer for Vision Transformer encoder. Patchifies the input image and projects them into the latent space."""

@@ -1,14 +1,18 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
+from torcheval.metrics.functional import bleu_score
+from torchvision import transforms
 
 import time as time
+from tqdm import tqdm
 
-from model import OCRModel
-from utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
-from dataset import ImagePadding, ImageDataset, DatasetSplits, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
-from torch.utils.data import DataLoader
+from TeXOCR.model import OCRModel
+from TeXOCR.utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
+from TeXOCR.dataset import ImagePadding, ImageDataset, BatchCollator, BucketBatchSampler, Invert, load_datasets, create_dataloader
 
 
 def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, verbose: bool = True):
@@ -19,25 +23,58 @@ def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, v
     test_acc = 0
     n_test = 0
 
+    import matplotlib.pyplot as plt
+
     with torch.no_grad():
-        for i, (img, trg) in enumerate(test_loader):
+        for i, (img, trg) in enumerate(tqdm(test_loader, desc='Testing')):
 
-            if i in [0, 1, 2]:
-                print(trg)
-                print(trg.shape)
-                print(img.shape)
+            # if i in [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]:
+            #     print(trg)
+            #     print(trg.shape)
+            #     print(img.shape)
 
-            # if i == 1:
             #     # Plot first image in the batch
+            #     plt.imshow(img[10].permute(1, 2, 0), cmap='gray')
+            #     plt.colorbar()
 
-            #     print(img[120])
+            #     # Plot 16*16 grid of patches on top of the image
+            #     for j in range(0, 160, 16):
+            #         for k in range(0, 1008, 16):
+            #             plt.plot([k, k+16], [j, j], color='r', linewidth=0.5)
+            #             plt.plot([k, k+16], [j+16, j+16], color='r', linewidth=0.5)
+            #             plt.plot([k, k], [j, j+16], color='r', linewidth=0.5)
+            #             plt.plot([k+16, k+16], [j, j+16], color='r', linewidth=0.5)
 
-            #     import matplotlib.pyplot as plt
-            #     plt.imshow(img[120].permute(1, 2, 0))
-            #     plt.show()
+            #     plt.savefig(f'img_{i}.png')
+            #     plt.close()
 
-            if verbose:
-                print(f'Batch {i+1}/{len(test_loader)}', end='\r')
+            # if i == 21:
+
+            #     img = img.to(device)
+            #     trg = trg.to(device)
+            #     print(trg.shape)
+            #     pred = model.generate(start_token=998, max_length=270, eos_token=997, src=img)
+
+            #     for j in [92, 104]:
+
+            #         target = trg[j]
+            #         prediction = pred[j]
+
+            #         eos_index = (target==997).nonzero().squeeze().int().item()
+
+            #         corr = (target[:eos_index+1] == prediction[:eos_index+1]).sum() / (eos_index+1)
+            #         print(f'{j}, Acc: {corr:.3f}')
+
+            #         print(prediction[:eos_index+1])
+            #         print(target)
+
+            #         print(test_set.tokenizer.decode(prediction[:eos_index+1].tolist()))
+            #         print(test_set.tokenizer.decode(target.tolist()))
+
+            #     exit()
+
+            # if verbose:
+            #     print(f'Batch {i+1}/{len(test_loader)}', end='\r')
 
             img = img.to(device)
             trg = trg.to(device)
@@ -97,6 +134,7 @@ if __name__ == '__main__':
 
     print(sorted([len(enc_label) for enc_label in [test_set.tokenizer.encode(label) for label in test_set.labels]])[:128])
 
+    print(len(test_set))
     print(test_set.max_seq_len)
     print(test_set.get_max_seq_len())
 
@@ -113,7 +151,7 @@ if __name__ == '__main__':
     model = create_model(config).to(device) # Create model
     optimizer = get_optimizer(model, config) # Get optimizer
 
-    model, optimizer, epoch = load_checkpoint(model, optimizer, device, 'checkpoints/checkpoint_newimg.pth')
+    model, optimizer, epoch = load_checkpoint(model, optimizer, device, 'checkpoints/checkpoint_hybrid.pth')
 
     # Print model.pos_embedding and class_token weights
 
@@ -122,5 +160,5 @@ if __name__ == '__main__':
     print(f'Using device: {device}')
     print(f'Model has {n_params} parameters.')
 
-    test_model(test_loader, model, device)
+    test_model(test_loader, model, device, test_set)
 
