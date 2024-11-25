@@ -1,4 +1,4 @@
-import random
+import torch
 import argparse
 from pathlib import Path
 from typing import Tuple, List
@@ -25,14 +25,20 @@ def split_data(input_file: str, splits: Tuple[float, float, float], output_dir: 
     with open(input_file, 'r') as f:
         lines = [line.strip() for line in f.readlines()]
 
-    # Shuffle the data
-    random.seed(seed)
-    random.shuffle(lines)
+    ids = ['eq_' + str(i).zfill(len(str(len(lines)))) + '.png' for i in range(1, len(lines) + 1)] # Image ids
+
+    # Get the shuffled indices
+    torch.manual_seed(seed)
+    indices = torch.randperm(len(lines)).tolist()
+
+    lines = [lines[i] for i in indices] # Shuffle the LaTeX data
+    ids = [ids[i] for i in indices] # Shuffle the image ids
 
     # Calculate the number of samples for each split
     total_lines = min(num_equations, len(lines))
     lines = lines[:total_lines]
-
+    ids = ids[:total_lines]
+    
     train_size = int(total_lines * train_ratio)
     test_size = int(total_lines * test_ratio)
     val_size = total_lines - train_size - test_size
@@ -45,6 +51,11 @@ def split_data(input_file: str, splits: Tuple[float, float, float], output_dir: 
     test_data = lines[train_size:train_size + test_size]
     val_data = lines[train_size + test_size:]
 
+    # Split the image ids
+    train_ids = ids[:train_size]
+    test_ids = ids[train_size:train_size + test_size]
+    val_ids = ids[train_size + test_size:]
+
     # Create output directories if they don't exist
     output_dir = Path(output_dir)
     output_dir.joinpath('train').mkdir(parents=True, exist_ok=True)
@@ -55,6 +66,11 @@ def split_data(input_file: str, splits: Tuple[float, float, float], output_dir: 
     write_data(output_dir.joinpath('train', label_name), train_data)
     write_data(output_dir.joinpath('test', label_name), test_data)
     write_data(output_dir.joinpath('val', label_name), val_data)
+
+    # Write the image ids into corresponding files
+    write_data(output_dir.joinpath('train', 'ids.txt'), train_ids)
+    write_data(output_dir.joinpath('test', 'ids.txt'), test_ids)
+    write_data(output_dir.joinpath('val', 'ids.txt'), val_ids)
 
 def write_data(output_file: str, data: List[str]):
     """Output equation data to a file"""

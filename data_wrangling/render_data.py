@@ -15,20 +15,18 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
     Renders a single LaTeX equation into a PNG file.
 
     Args:
-        args (tuple): Contains (equation, output_dir, index, total_count, dpi).
+        args (tuple): Contains (equation, data_dir, id, total_count, dpi).
     """
-    equation, output_dir, index, total_count, dpi, patch_size, failed = args
+    equation, data_dir, id, total_count, dpi, patch_size, failed = args
 
     equation = equation.strip()
     if not equation:
         return
 
-    # Determine the number of digits needed for zero padding
-    zero_filled_index = str(index).zfill(len(str(total_count)))
-    image_dir = Path(output_dir) / "images"
+    image_dir = Path(data_dir) / "images"
     os.makedirs(image_dir, exist_ok=True)
 
-    base_filename = f"eq{zero_filled_index}"
+    base_filename = id[:-4] # Remove the .png extension
     tex_file = Path(image_dir) / f"{base_filename}.tex"
     dvi_file = Path(image_dir) / f"{base_filename}.dvi"
     png_file = Path(image_dir) / f"{base_filename}.png"
@@ -67,8 +65,8 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
             stderr=subprocess.PIPE,
         )
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to render equation {index} {equation}: {e}")
-        failed.append((index, equation))
+        logging.error(f"Failed to render equation {base_filename} {equation}: {e}")
+        failed.append((base_filename, equation))
     finally:
         # Cleanup intermediate files
         tex_file.unlink(missing_ok=True)
@@ -82,7 +80,7 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
         w, h = imagesize.get(str(png_file))
         new_h = h + (patch_size - h % patch_size) % patch_size
 
-        w_interval = 2 * patch_size # Widths vary more, so increase the interval to reduce number of width 'bins'
+        w_interval = 4 * patch_size # Widths vary more, so increase the interval to reduce number of width 'bins'
         new_w = w + (w_interval - w % w_interval) % w_interval
         subprocess.run(
             ["convert", str(png_file), "-gravity", "center", "-extent", f"{new_w}x{new_h}", str(png_file)],
@@ -91,7 +89,7 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
             stderr=subprocess.PIPE,
         )
 
-def render_images(input_file: str, output_dir: str, dpi: int = 300, num_processes: int = None, patch_size: int = 16) -> None:
+def render_images(data_dir: str, dpi: int = 300, num_processes: int = None, patch_size: int = 16) -> None:
     """
     Parallelizes LaTeX rendering using multiple processes.
 
@@ -103,11 +101,16 @@ def render_images(input_file: str, output_dir: str, dpi: int = 300, num_processe
         patch_size: Patch size for the image resizing.
     """
     # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
 
     # Read equations from the file
+    input_file = Path(data_dir) / "labels.txt"
     with open(input_file, 'r', encoding='utf-8') as f:
         equations = [line.strip() for line in f if line.strip()]
+
+    id_file = Path(data_dir) / "ids.txt"
+    with open(id_file, 'r', encoding='utf-8') as f:
+        ids = [line.strip() for line in f if line.strip()]
 
     total_count = len(equations)
     num_processes = num_processes or cpu_count()
@@ -116,7 +119,7 @@ def render_images(input_file: str, output_dir: str, dpi: int = 300, num_processe
     with Manager() as manager:
         failed = manager.list()
         tasks = [
-            (equation, output_dir, i + 1, total_count, dpi, patch_size, failed)
+            (equation, data_dir, ids[i], total_count, dpi, patch_size, failed)
             for i, equation in enumerate(equations)
         ]
 
@@ -125,20 +128,20 @@ def render_images(input_file: str, output_dir: str, dpi: int = 300, num_processe
             # Wrap the pool map with tqdm for a progress bar
             list(tqdm(pool.imap(render_latex, tasks), total=total_count, desc="Rendering"))
 
-        print(f"Rendered {total_count} equations to {output_dir}, with {len(failed)} failures.")
+        print(f"Rendered {total_count} equations to {data_dir}, with {len(failed)} failures.")
 
         if failed:
-            with open(Path(output_dir) / "failed.txt", "w", encoding="utf-8") as f:
+            with open(Path(data_dir) / "failed.txt", "w", encoding="utf-8") as f:
                 for index, equation in failed:
                     f.write(f"{index}: {equation}\n")
 
         # Create clean ids file
-        with open(Path(output_dir) / "ids.txt", "w", encoding="utf-8") as f:
-            for i, equation in enumerate(equations):
-                zero_filled_index = str(i + 1).zfill(len(str(total_count)))
-                f.write(f"eq{zero_filled_index}.png\n")
+        # with open(Path(data_dir) / "ids.txt", "w", encoding="utf-8") as f:
+        #     for i, equation in enumerate(equations):
+        #         zero_filled_index = str(i + 1).zfill(len(str(total_count)))
+        #         f.write(f"eq{zero_filled_index}.png\n")
 
-def prune_equations(input_file: str, failed_file: Path, output_dir: str):
+def prune_equations(data_dir: str, failed_file: Path):
     """
     Remove failed equations from the original equations file and save them to a separate file.
     
@@ -152,28 +155,29 @@ def prune_equations(input_file: str, failed_file: Path, output_dir: str):
 
     # Clean equations
     with open(failed_file, "r", encoding="utf-8") as f:
-        failed_indices = {int(line.split(":")[0]) for line in f}
+        failed_eqs = [line.split(":")[0] + '.png' for line in f]
 
+    id_file = Path(data_dir) / "ids.txt"
+    with open(id_file, "r", encoding="utf-8") as f:
+        ids = [line.strip() for line in f]
+
+    input_file = Path(data_dir) / "labels.txt"
     with open(input_file, "r", encoding="utf-8") as f:
-        equations = [line.strip() for i, line in enumerate(f, 1) if i not in failed_indices]
+        equations = [line.strip() for i, line in enumerate(f) if ids[i] not in failed_eqs]
 
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = Path(output_dir) / "labels_pruned.txt"
+    ids = [id for id in ids if id not in failed_eqs]
+
+    output_file = Path(data_dir) / "labels_pruned.txt"
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n".join(equations))
 
-    # Clean ids
-    with open(Path(output_dir) / "ids.txt", "r", encoding="utf-8") as f:
-        ids = [line.strip() for i, line in enumerate(f, 1) if i not in failed_indices]
-
-    with open(Path(output_dir) / "ids_pruned.txt", "w", encoding="utf-8") as f:
+    with open(Path(data_dir) / "ids_pruned.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(ids))
 
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Render LaTeX equations to images.")
-    parser.add_argument("input_file", type=str, help="Path to the .txt file containing LaTeX equations.")
-    parser.add_argument("output_dir", type=str, help="Directory to save the rendered images.")
+    parser.add_argument("data_dir", type=str, help="Path to the directory containing labels.txt file.")
     parser.add_argument("-c", "--config", type=str, default="config/data_config.yml", help="Path to the configuration file.")
     return parser.parse_args()
 
@@ -182,25 +186,22 @@ def main(args):
     config = load_config(args.config)
 
     # Retrieve the necessary parameters from the config file
-    input_file = args.input_file
-    output_dir = args.output_dir
+    data_dir = args.data_dir
     dpi = config["dpi"]
     num_processes = config["num_processes"]
     patch_size = config["patch_size"]
 
     render_images(
-        input_file=input_file,
-        output_dir=output_dir,
+        data_dir=data_dir,
         dpi=dpi,
         num_processes=num_processes,
         patch_size=patch_size
     )
 
-    failed_file = Path(output_dir) / "failed.txt"
+    failed_file = Path(data_dir) / "failed.txt"
     prune_equations(
-        input_file=input_file,
+        data_dir=data_dir,
         failed_file=failed_file,
-        output_dir=output_dir
     )
 
 if __name__ == "__main__":
