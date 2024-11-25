@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from TeXOCR.model import VisionEncoder, TransformerDecoder, OCRModel
 from TeXOCR.hybrid_encoder import CustomVisionTransformer
-from TeXOCR.x_decoder import CustomARWrapper
+# from TeXOCR.x_decoder import CustomARWrapper
 
 from timm.models.vision_transformer import VisionTransformer
 from timm.models.vision_transformer_hybrid import HybridEmbed
