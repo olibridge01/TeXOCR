@@ -72,7 +72,7 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
             images = images.to(device)
             targets = targets.to(device)
 
-            print(f'Images shape: {images.shape}')
+            # print(f'Images shape: {images.shape}')
             
             optimizer.zero_grad()
             
@@ -86,7 +86,7 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
             loss.backward()
             optimizer.step()
 
-            print(f'Loss: {loss.item()}')
+            # print(f'Loss: {loss.item()}')
             
             epoch_loss += loss.item()
         
