@@ -135,12 +135,6 @@ def render_images(data_dir: str, dpi: int = 300, num_processes: int = None, patc
                 for index, equation in failed:
                     f.write(f"{index}: {equation}\n")
 
-        # Create clean ids file
-        # with open(Path(data_dir) / "ids.txt", "w", encoding="utf-8") as f:
-        #     for i, equation in enumerate(equations):
-        #         zero_filled_index = str(i + 1).zfill(len(str(total_count)))
-        #         f.write(f"eq{zero_filled_index}.png\n")
-
 def prune_equations(data_dir: str, failed_file: Path):
     """
     Remove failed equations from the original equations file and save them to a separate file.

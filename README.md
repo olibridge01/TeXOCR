@@ -14,7 +14,7 @@ The model consists of an encoder-decoder architecture that is common for many cu
 ![TeXOCR_model](https://github.com/user-attachments/assets/6f268b72-3566-4a04-875a-9ad925bdb22c)
 
 
-The vision encoder receives images of LaTeX equations and processes them into a series of embeddings $\mathbf{z}^{(i)}$ for each of the $N$ patches. The embeddings are passed into a Transformer decoder along with sequences of tokenized LaTeX code. The decoder generates a probability distribution over the vocabulary of LaTeX tokens to sample the next token in the sequence. The solution is then generated in an autoregressive manner to yield an overall prediction.
+The vision encoder receives images of LaTeX equations and processes them into a series of embeddings $\mathbf{z}^{(i)} \in \mathbb{R}^{d}$ for each of the $N$ patches. The embeddings are passed into a Transformer decoder along with sequences of tokenized LaTeX code. The decoder generates a probability distribution over the vocabulary of LaTeX tokens to sample the next token in the sequence. The solution is then generated in an autoregressive manner to yield an overall prediction.
 
 <!-- ### Running the Code
 - Clone the repository
@@ -37,6 +37,8 @@ For package management, set up a conda environment and install the required pack
   pip install -r requirements.txt
   ```
 
+For dataset rendering, `latex`, `dvipng`, and `imagemagick` are required. To install these dependencies, follow the instructions in the [`data_wrangling/`](data_wrangling/README.md) directory.
+
 
 ### Data
 
@@ -45,15 +47,25 @@ The data used in this project is taken from the [Im2LaTeX-230k](https://www.kagg
   ```bash
   ./generate_dataset.sh
   ```
-This takes the original equation data `data/master_labels.txt`, creates the data splits with `split_data.py` and renders the images with `render_images.py` (located in the `data_wrangling` directory). The rendered images are stored in `data/train`, `data/val`, and `data/test` directories.
+This takes the original equation data `data/master_labels.txt`, creates the data splits with `split_data.py` and renders the images with `render_images.py` (located in the `data_wrangling` directory). The rendered images are stored in `data/train`, `data/val`, and `data/test` directories. To create the dataset pickle files used in the training/testing scripts, run:
+  
+  ```bash
+  ./generate_pickles.sh
+  ```
 
 ### Tokenizer
-This repository contains an implementation of the Byte Pair Encoding (BPE) [4] algorithm for tokenizing LaTeX code. To train the tokenizer on some text data, run the following command:
+This repository contains an implementation of the Byte Pair Encoding (BPE) [4] algorithm for tokenizing LaTeX code. To train the tokenizer on the Im2LaTeX-230k equation data, run:
+
+  ```bash
+  ./train_tokenizer.sh
+  ```
+
+To train the tokenizer on any text data, you can play around with the `tokenizer/tokenizer.py` script:
 
 ```bash
-python tokenizer.py -v [vocab_size] -t -d [data_path] -s [save_path] --special [special_tokens] --verbose
+python tokenizer/tokenizer.py -v [vocab_size] -t -d [data_path] -s [save_path] --special [special_tokens] --verbose
 ```
-where `vocab_size` is the desired vocabulary size, `data_path` is the path to the training data, `save_path` is the path to save the tokenizer (.txt file), and `special_tokens` is the path to a .txt file containing special tokens (e.g. [BOS], [PAD], etc.). The tokenizer can be tinkered with in Python as follows:
+where `vocab_size` is the desired vocabulary size, `data_path` is the path to the training data, `save_path` is the path to save the tokenizer (.txt file), and `special_tokens` is the path to a .txt file containing special tokens (e.g. [BOS], [PAD], etc.). Additionally, one can tinker with the `RegExTokenizer` class in Python as follows:
 
 ```python
 from TeXOCR.tokenizer import RegExTokenizer
@@ -65,6 +77,7 @@ tokenizer.save('path/to/tokenizer.txt')
 
 # Tokenize a LaTeX string
 tokens = tokenizer.encode('\int _ { 0 } ^ { 1 } x ^ 2 d x')
+print(tokens)
 ```
 where `train.txt` is some file containing tokenization training data. The tokenizer can be saved and loaded using the `save()` and `load()` methods.
 
