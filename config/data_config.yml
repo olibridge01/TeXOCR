@@ -1,5 +1,5 @@
 dpi: 125
-num_equations: 100000
+num_equations: 1000
 num_processes: 8
 patch_size: 16
 seed: 42

@@ -1,7 +1,9 @@
 batch_shuffle: true
 batch_size: 128
+bos_token: 998
 dataset_size: 100000
 decoder:
+  cross_attend: true
   dropout: 0.1
   embed_dim: 256
   exp_factor: 4
@@ -16,6 +18,8 @@ encoder:
   heads: 8
   n_channels: 1
   num_layers: 4
+eos_token: 997
+glu: true
 id_shuffle: true
 keep_small: false
 loss_fn: CrossEntropyLoss

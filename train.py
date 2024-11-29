@@ -8,10 +8,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from TeXOCR.model import OCRModel
+from TeXOCR.model import OCRModel, create_model
 from TeXOCR.test import test_model
-from TeXOCR.utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint
-from TeXOCR.dataset import ImagePadding, Invert, ImageDataset, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
+from TeXOCR.utils import load_config, count_parameters, get_optimizer, get_loss_fn, save_checkpoint
+from TeXOCR.data_wrangling.dataset import ImagePadding, Invert, ImageDataset, BatchCollator, BucketBatchSampler, load_datasets, create_dataloader
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -76,17 +76,19 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
             
             optimizer.zero_grad()
             
-            output = model(images, targets[:, :-1])
+            # output = model(images, targets[:, :-1])
             
-            output = output.transpose(1, 2)
-            targets = targets[:, 1:]
+            # output = output.transpose(1, 2)
+            # targets = targets[:, 1:]
             
-            loss = criterion(output, targets)
+            # loss = criterion(output, targets)
+
+            loss = model(images, targets)
             
             loss.backward()
             optimizer.step()
 
-            # print(f'Loss: {loss.item()}')
+            print(f'Loss: {loss.item()}')
             
             epoch_loss += loss.item()
         

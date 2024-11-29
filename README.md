@@ -56,7 +56,7 @@ python tokenizer.py -v [vocab_size] -t -d [data_path] -s [save_path] --special [
 where `vocab_size` is the desired vocabulary size, `data_path` is the path to the training data, `save_path` is the path to save the tokenizer (.txt file), and `special_tokens` is the path to a .txt file containing special tokens (e.g. [BOS], [PAD], etc.). The tokenizer can be tinkered with in Python as follows:
 
 ```python
-from tokenizer import RegExTokenizer
+from TeXOCR.tokenizer import RegExTokenizer
 
 tokenizer = RegExTokenizer()
 text = open('path/to/train.txt').read()

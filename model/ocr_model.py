@@ -2,100 +2,105 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from TeXOCR.model.encoder import VisionEncoder
-from TeXOCR.model.decoder import TransformerDecoder
+from TeXOCR.model.encoder import create_encoder
+from TeXOCR.model.decoder import create_decoder
 
 class OCRModel(nn.Module):
-    def __init__(self, encoder: nn.Module, decoder: nn.Module, src_pad_idx: int, trg_pad_idx: int, device: torch.device):
-        super(OCRModel, self).__init__()
+    """TeXOCR model for image-to-LaTeX conversion."""
+    def __init__(
+        self, 
+        encoder: nn.Module, 
+        decoder: nn.Module, 
+        bos_token: int,
+        eos_token: int,
+        trg_pad_idx: int, 
+        device: torch.device
+    ):
+        super().__init__()
         self.encoder = encoder
         self.decoder = decoder
 
-        self.src_pad_idx = src_pad_idx
+        self.bos_token = bos_token
+        self.eos_token = eos_token
         self.trg_pad_idx = trg_pad_idx
         self.device = device
 
-    def make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            src: Source tensor.
-        """
-        src_mask = (src != self.src_pad_idx).unsqueeze(1).unsqueeze(2)
-        return src_mask.to(self.device)
-
     def make_trg_mask(self, trg: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            trg: Target tensor.
-        """
-        N, trg_len = trg.shape
-        trg_mask = torch.tril(torch.ones(trg_len, trg_len)).expand(
-            N, 1, trg_len, trg_len
-        )
+        trg_mask = (trg != self.trg_pad_idx) # Shape (N, trg_len)
         return trg_mask.to(self.device)
 
-    def forward(self, src: torch.Tensor, trg: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            src: Source tensor.
-            trg: Target tensor.
-        """
-        src_mask = self.make_src_mask(src)
+    def forward(self, src: torch.Tensor, trg: torch.Tensor, return_out: bool = False) -> torch.Tensor:
+        # Create target mask
         trg_mask = self.make_trg_mask(trg)
-        # enc_src = self.encoder(src, mask=None)
-        enc_src = self.encoder(src)
-        out = self.decoder(trg, enc_src, src_mask=None, trg_mask=trg_mask)
 
-        # return self.decoder(trg, context=enc_src, mask=None)
-
-        return out
+        # Get encoder output and pass to decoder
+        enc = self.encoder(src)
+        return self.decoder(trg, enc=enc, mask=trg_mask)
     
-    def generate(self, start_token, max_length, eos_token, src):
-        """
-        Args:
-            start_token: Start token.
-            max_length: Maximum length.
-            eos_token: End of sequence token.
-        """
+    @torch.no_grad()
+    def generate(self, src: torch.Tensor, max_len: int, temp: float = 0.3):
 
-        src_mask = self.make_src_mask(src)
-        # enc_out = self.encoder(src, mask=None)
-        print(src.shape)
-        enc_out = self.encoder(src)
-
-        print(f'enc_out shape: {enc_out.shape}')
-        # for i in range(64, 128):
-        #     print(enc_out[0,i,:])
-
+        # Get encoder embeddings and start tokens
+        enc = self.encoder(src)
         import matplotlib.pyplot as plt
-        # Plot all embedding vectors for the first image
-        plt.figure(figsize=(10, 10))
-        plt.imshow(enc_out[0].detach().numpy())
+        plt.imshow(enc[0].detach().cpu().numpy())
         plt.colorbar()
-        plt.savefig('enc_out2.png')
+        plt.savefig('enc.png')
         plt.close()
 
+        start_tokens = torch.LongTensor([self.bos_token] * src.shape[0]).unsqueeze(1).to(self.device)
 
-        trg_tensor = torch.tensor([start_token] * src.shape[0]).unsqueeze(1).to(self.device)
-        seen_eos = torch.tensor([False] * src.shape[0]).to(self.device)
+        # Generate using auto-regressive transformer decoder
+        return self.decoder.generate(
+            start_tokens=start_tokens,
+            eos_tok=self.eos_token,
+            max_len=max_len,
+            temp=temp,
+            enc=enc
+        )
 
-        for i in range(max_length):
+    
+
+
+        # trg_tensor = torch.tensor([start_token] * src.shape[0]).unsqueeze(1).to(self.device)
+        # seen_eos = torch.tensor([False] * src.shape[0]).to(self.device)
+
+        # for i in range(max_length):
             
-            # For generations, target mask is not needed. Generate tensor for target mask
+        #     # For generations, target mask is not needed. Generate tensor for target mask
 
 
-            out = self.decoder(trg_tensor, enc_out, src_mask=None, trg_mask=None)
+        #     out = self.decoder(trg_tensor, enc_out, src_mask=None, trg_mask=None)
 
-            out = out.argmax(2)[:, -1].unsqueeze(1)
+        #     out = out.argmax(2)[:, -1].unsqueeze(1)
 
-            trg_tensor = torch.cat((trg_tensor, out), 1)
+        #     trg_tensor = torch.cat((trg_tensor, out), 1)
 
-            seen_eos |= (out == eos_token).flatten()
+        #     seen_eos |= (out == eos_token).flatten()
 
-            if seen_eos.all():
-                break
+        #     if seen_eos.all():
+        #         break
 
-        return trg_tensor
+        # return trg_tensor
+
+def create_model(config: dict) -> OCRModel:
+    """Create an OCRModel from a configuration file."""
+    encoder = create_encoder(config)
+    decoder = create_decoder(config)
+    device = torch.device(config['device'])
+    bos_token = config['bos_token']
+    eos_token = config['eos_token']
+
+    model = OCRModel(
+        encoder,
+        decoder,
+        bos_token=bos_token,
+        eos_token=eos_token,
+        trg_pad_idx=config['trg_pad_idx'],
+        device=device
+    )
+
+    return model
     
 if __name__ == "__main__":
     

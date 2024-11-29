@@ -10,12 +10,12 @@ from torchvision import transforms
 import time as time
 from tqdm import tqdm
 
-from TeXOCR.model import OCRModel
-from TeXOCR.utils import load_config, create_model, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
+from TeXOCR.model import OCRModel, create_model
+from TeXOCR.utils import load_config, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
 from TeXOCR.dataset import ImagePadding, ImageDataset, BatchCollator, BucketBatchSampler, Invert, load_datasets, create_dataloader
 
 
-def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, verbose: bool = True):
+def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, test_set, verbose: bool = True):
     """Test the TeXOCR model."""
     model.eval()
 
@@ -48,49 +48,53 @@ def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, v
             #     plt.savefig(f'img_{i}.png')
             #     plt.close()
 
-            # if i == 21:
+            if i == 21:
 
-            #     img = img.to(device)
-            #     trg = trg.to(device)
-            #     print(trg.shape)
-            #     pred = model.generate(start_token=998, max_length=270, eos_token=997, src=img)
+                img = img.to(device)
+                trg = trg.to(device)
+                print(trg.shape)
+                pred = model.generate(max_len=270, src=img)
 
-            #     for j in [92, 104]:
+                for j in range(1):
 
-            #         target = trg[j]
-            #         prediction = pred[j]
+                    target = trg[j]
+                    prediction = pred[j]
 
-            #         eos_index = (target==997).nonzero().squeeze().int().item()
+                    eos_index = (target==997).nonzero().squeeze().int().item()
 
-            #         corr = (target[:eos_index+1] == prediction[:eos_index+1]).sum() / (eos_index+1)
-            #         print(f'{j}, Acc: {corr:.3f}')
+                    print(eos_index)
+                    print(prediction.shape)
+                    print(target.shape)
 
-            #         print(prediction[:eos_index+1])
-            #         print(target)
+                    # corr = (target[:eos_index+1] == prediction[:eos_index+1]).sum() / (eos_index+1)
+                    # print(f'{j}, Acc: {corr:.3f}')
 
-            #         print(test_set.tokenizer.decode(prediction[:eos_index+1].tolist()))
-            #         print(test_set.tokenizer.decode(target.tolist()))
+                    print(prediction[:eos_index+1])
+                    print(target)
+
+                    print(test_set.tokenizer.decode(prediction[:eos_index+1].tolist()))
+                    print(test_set.tokenizer.decode(target.tolist()))
 
             #     exit()
 
             # if verbose:
             #     print(f'Batch {i+1}/{len(test_loader)}', end='\r')
 
-            img = img.to(device)
-            trg = trg.to(device)
+    #         img = img.to(device)
+    #         trg = trg.to(device)
 
-            out = model(img, trg[:, :-1])
+    #         out = model(img, trg[:, :-1])
 
-            loss = F.cross_entropy(out.reshape(-1, out.shape[-1]), trg[:, 1:].reshape(-1), ignore_index=999)
-            test_loss += loss.item()
+    #         loss = F.cross_entropy(out.reshape(-1, out.shape[-1]), trg[:, 1:].reshape(-1), ignore_index=999)
+    #         test_loss += loss.item()
 
-            acc = (out.argmax(2) == trg[:, 1:]).sum() / (trg[:, 1:] != 999).sum()
-            test_acc += acc.item()
+    #         acc = (out.argmax(2) == trg[:, 1:]).sum() / (trg[:, 1:] != 999).sum()
+    #         test_acc += acc.item()
 
-            n_test += 1
+    #         n_test += 1
 
-    test_loss /= n_test
-    test_acc /= n_test
+    # test_loss /= n_test
+    # test_acc /= n_test
 
     if verbose:
         print(f'Test loss: {test_loss:.4f}')
@@ -120,10 +124,10 @@ def single_prediction(model: OCRModel, test_loader: DataLoader, device: torch.de
     return out
 
 if __name__ == '__main__':
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.set_default_dtype(torch.float32)
+    # torch.backends.cuda.matmul.allow_tf32 = False
+    # torch.set_default_dtype(torch.float32)
     # Load config file
-    config = load_config('config.yml')
+    config = load_config('config/config.yml')
     
     # Load datasets
     train_set, val_set, test_set = load_datasets('data')
@@ -132,7 +136,7 @@ if __name__ == '__main__':
 
     print(test_set.tokenizer_path)
 
-    print(sorted([len(enc_label) for enc_label in [test_set.tokenizer.encode(label) for label in test_set.labels]])[:128])
+    # print(sorted([len(enc_label) for enc_label in [test_set.tokenizer.encode(label) for label in test_set.labels]])[:128])
 
     print(len(test_set))
     print(test_set.max_seq_len)
@@ -140,7 +144,7 @@ if __name__ == '__main__':
 
     
     # Add max_length and vocab_size to config
-    config['max_length'] = 839
+    config['max_length'] = 859
     config['vocab_size'] = test_set.tokenizer.vocab_size
     
     # Get train and val dataloaders
@@ -151,7 +155,7 @@ if __name__ == '__main__':
     model = create_model(config).to(device) # Create model
     optimizer = get_optimizer(model, config) # Get optimizer
 
-    model, optimizer, epoch = load_checkpoint(model, optimizer, device, 'checkpoints/checkpoint_hybrid.pth')
+    model, optimizer, epoch = load_checkpoint(model, optimizer, device, 'checkpoints/checkpoint_eureka.pth')
 
     # Print model.pos_embedding and class_token weights
 

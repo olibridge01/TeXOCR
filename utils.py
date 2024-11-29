@@ -1,22 +1,31 @@
 import yaml
+import math
 from typing import Tuple, Dict, List
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from TeXOCR.model import VisionEncoder, TransformerDecoder, OCRModel
-from TeXOCR.hybrid_encoder import CustomVisionTransformer
+# from TeXOCR.model import VisionEncoder, TransformerDecoder, OCRModel, AutoRegressiveTransformer, Encoder, Decoder, Transformer
+# from TeXOCR.hybrid_encoder import CustomVisionTransformer
 # from TeXOCR.x_decoder import CustomARWrapper
 
-from timm.models.vision_transformer import VisionTransformer
-from timm.models.vision_transformer_hybrid import HybridEmbed
-from timm.models.resnetv2 import ResNetV2
-from timm.models.layers import StdConv2dSame
+
 from einops import repeat
 
-from x_transformers import TransformerWrapper, Decoder
+# from x_transformers import TransformerWrapper, Decoder
+
+def exists(x):
+    """Check for existence of x."""
+    return x is not None
+
+def get(x, y):
+    """x if it exists, otherwise y."""
+    if exists(x):
+        return x
+    return y
 
 def load_config(config_path: str) -> dict:
     """Load a configuration file in yaml format."""
@@ -47,97 +56,6 @@ def alphabetize_config(config: dict) -> dict:
 
 #     return encoder
 
-def create_encoder(config: dict):
-    """Create a VisionEncoder from a config dict."""
-    batch_size = config['batch_size']
-    patch_size = config['patch_size']
-    encoder_args = config['encoder']
-    device = torch.device(config['device'])
-
-    backbone = ResNetV2(
-        layers=[2,3,7], num_classes=0, global_pool='', in_chans=1,
-        preact=False, stem_type='same', conv_layer=StdConv2dSame)
-    min_patch_size = 2**(3+1)
-
-    def embed_layer(**x):
-        ps = x.pop('patch_size', min_patch_size)
-        assert ps % min_patch_size == 0 and ps >= min_patch_size, 'patch_size needs to be multiple of %i with current backbone configuration' % min_patch_size
-        return HybridEmbed(**x, patch_size=ps//min_patch_size, backbone=backbone)
-
-    encoder = CustomVisionTransformer(img_size=(160, 1008),
-                                      patch_size=patch_size,
-                                      in_chans=1,
-                                      num_classes=0,
-                                      embed_dim=256,
-                                      depth=4,
-                                      num_heads=8,
-                                      embed_layer=embed_layer
-                                      )
-    return encoder
-
-def create_decoder(config: dict) -> TransformerDecoder:
-    """Create a TransformerDecoder from a config dict."""
-    assert 'max_length' in config, 'max_length not loaded into config file!'
-    assert 'vocab_size' in config, 'vocab_size not loaded into config file!'
-
-    device = torch.device(config['device'])
-    max_length = config['max_length']
-    vocab_size = config['vocab_size']
-    decoder_args = config['decoder']
-
-    decoder = TransformerDecoder(
-        device=device,
-        max_length=max_length,
-        vocab_size=vocab_size,
-        **decoder_args
-    )
-
-    return decoder
-
-# def create_decoder(config: dict):
-#     """Create a TransformerDecoder from a config dict."""
-#     assert 'max_length' in config, 'max_length not loaded into config file!'
-#     assert 'vocab_size' in config, 'vocab_size not loaded into config file!'
-
-#     device = torch.device(config['device'])
-#     max_length = config['max_length']
-#     vocab_size = config['vocab_size']
-#     decoder_args = {
-#         'attn_on_attn': True,
-#         'cross_attend': True,
-#         'ff_glu': True,
-#         'rel_pos_bias': False,
-#         'use_scalenorm': False
-#     }
-
-#     return CustomARWrapper(
-#         TransformerWrapper(
-#             num_tokens=vocab_size,
-#             max_seq_len=max_length,
-#             attn_layers=Decoder(
-#                 dim=256,
-#                 depth=4,
-#                 heads=8,
-#                 **decoder_args
-#             )),
-#         pad_value=999)
-    
-
-def create_model(config: dict) -> OCRModel:
-    """Create an OCRModel from a configuration file."""
-    encoder = create_encoder(config)
-    decoder = create_decoder(config)
-    device = torch.device(config['device'])
-
-    model = OCRModel(
-        encoder,
-        decoder,
-        src_pad_idx=config['src_pad_idx'],
-        trg_pad_idx=config['trg_pad_idx'],
-        device=device
-    )
-
-    return model
 
 def count_parameters(model: nn.Module) -> int:
     """Count the number of parameters in a model."""
@@ -174,6 +92,50 @@ def load_checkpoint(model: nn.Module, optimizer: optim.Optimizer, device: torch.
     print('Checkpoint loaded!')
 
     return model, optimizer, epoch
+
+def max_negative_val(x):
+    """Maximum negative value for a tensor."""
+    return -torch.finfo(x.dtype).max
+
+def topk(logits: torch.Tensor, threshold: float = 0.9):
+    """Top-k filtering for logits."""
+    k = int((1 - threshold) * logits.shape[-1])
+    val, ind = torch.topk(logits, k)
+    probs = torch.full_like(logits, float('-inf'))
+    probs.scatter_(1, ind, val)
+    return probs
+
+def get_padding(kernel_size: int, stride: int = 1, dilation: int = 1, **kwargs) -> int:
+    """Get padding for a convolutional layer."""
+    padding = ((stride - 1) + dilation * (kernel_size - 1)) // 2
+    return padding
+
+def get_same_padding(x: int, k: int, s: int, d: int) -> int:
+    """Get padding for a convolutional layer to maintain spatial dimensions."""
+    return max((math.ceil(x / s) - 1) * s + (k - 1) * d + 1 - x, 0)
+
+def is_static_pad(kernel_size: int, stride: int = 1, dilation: int = 1, **kwargs) -> bool:
+    """Check if padding is static."""
+    return stride == 1 and (dilation * (kernel_size - 1)) % 2 == 0
+
+def padding_val(padding: str, kernel_size: int, **kwargs) -> Tuple[int, bool]:
+    dynamic = False
+    """Get padding value and whether it is dynamic."""
+    if is_static_pad(kernel_size, **kwargs):
+        padding = get_padding(kernel_size, **kwargs)
+    else:
+        padding = 0
+        dynamic = True
+    return padding, dynamic
+
+def pad_same(x: torch.Tensor, k: List[int], s: List[int], d: List[int] = (1, 1), value: float = 0.) -> torch.Tensor:
+    """Pad a tensor to maintain spatial dimensions."""
+    ih, iw = x.size()[-2:]
+    pad_h = get_same_padding(ih, k[0], s[0], d[0])
+    pad_w = get_same_padding(iw, k[1], s[1], d[1])
+    if pad_h > 0 or pad_w > 0:
+        x = F.pad(x, [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2], value=value)
+    return x
 
 
 if __name__ == '__main__':

@@ -1,373 +1,203 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F   
+import torch.nn.functional as F
+import einops
 
-class MLP(nn.Module):
-    """Transformer block Multi-Layer Perceptron (MLP)."""
-    def __init__(self, embed_dim: int, exp_factor: int, activation: nn.Module = nn.GELU()):
-        """
-        Args:
-            embed_dim: Embedding dimension.
-            exp_factor: MLP dimension expansion factor.
-            activation: Activation function.
-        """
-        super(MLP, self).__init__()
-        self.network = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * exp_factor),
-            activation,
-            nn.Linear(embed_dim * exp_factor, embed_dim)
-        )
+from TeXOCR.utils import exists, get, max_negative_val, topk
+from TeXOCR.model.attention import AttentionLayers, PositionalEmbedding, DecoderLayers
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)  
-
-
-class MultiHeadAttention(nn.Module):
-    """Multi-headed attention module."""
-    def __init__(self, embed_dim: int, heads: int):
-        """
-        Args:
-            embed_dim: Embedding dimension.
-            heads: Number of attention heads.
-        """
-        super(MultiHeadAttention, self).__init__()
-        self.embed_dim = embed_dim
-        self.heads = heads
-        self.head_dim = embed_dim // heads
-        
-        assert (self.head_dim * heads == embed_dim), "Embedding size must be divisible by the number of attention heads."
-
-        # Queries, keys, and values linear transformations
-        self.q = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.k = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.v = nn.Linear(self.head_dim, self.head_dim, bias=False)
-
-        self.fc_out = nn.Linear(heads * self.head_dim, embed_dim)
-
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
-        """
-        Args:
-            q: Queries tensor.
-            k: Keys tensor.
-            v: Values tensor.
-            mask: Mask tensor.
-        """
-        N = q.shape[0] # Batch size
-        q_len, k_len, v_len = q.shape[1], k.shape[1], v.shape[1] # Sequence length
-        
-        # Split the embedding into self.heads pieces
-        q = q.reshape(N, q_len, self.heads, self.head_dim)
-        k = k.reshape(N, k_len, self.heads, self.head_dim)
-        v = v.reshape(N, v_len, self.heads, self.head_dim)
-        
-        # Apply linear transformations to queries, keys, and values
-        q = self.q(q)
-        k = self.k(k)
-        v = self.v(v)
-        
-        # Compute scaled dot-product attention
-        energy = torch.einsum("nqhd,nkhd->nhqk", [q, k])
-        
-        if mask is not None:
-            energy = energy.masked_fill(mask == 0, float("-1e20"))
-        
-        attention = F.softmax(energy / (self.embed_dim ** (1 / 2)), dim=3)
-        
-        out = torch.einsum("nhql,nlhd->nqhd", [attention, v]).reshape(
-            N, q_len, self.heads * self.head_dim
-        )
-        
-        # Apply linear transformation to the concatenated heads
-        out = self.fc_out(out)
-        
-        return out
-    
-
-class TransformerBlock(nn.Module):
-    """Transformer block module."""
-    def __init__(self, embed_dim: int, heads: int, exp_factor: int, dropout: float):
-        """
-        Args:
-            embed_dim: Embedding dimension.
-            heads: Number of attention heads.
-            exp_factor: MLP dimension expansion factor.
-            dropout: Dropout rate.
-        """
-        super(TransformerBlock, self).__init__()
-        self.attention = MultiHeadAttention(embed_dim, heads)
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-
-        self.mlp = MLP(embed_dim, exp_factor, activation=nn.GELU())
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            q: Queries tensor.
-            k: Keys tensor.
-            v: Values tensor.
-            mask: Mask tensor.
-        """
-        attention = self.attention(q, k, v, mask)
-
-        # Add skip connection, run through normalization and finally dropout
-        x = self.dropout(self.norm1(attention + q))
-        forward = self.mlp(x)
-        out = self.dropout(self.norm2(forward + x))
-        return out
-    
-
-class TransformerEncoder(nn.Module):
-    """Transformer encoder module."""
-    def __init__(
-            self,
-            src_vocab_size: int,
-            embed_dim: int,
-            num_layers: int,
-            heads: int,
-            device: torch.device,
-            exp_factor: int,
-            dropout: float,
-            max_length: int,
-    ):
-        """
-        Args:
-            src_vocab_size: Source vocabulary size.
-            embed_dim: Embedding dimension.
-            num_layers: Number of layers.
-            heads: Number of attention heads.
-            device: Device.
-            exp_factor: MLP dimension expansion factor.
-            dropout: Dropout rate.
-            max_length: Maximum sequence length.
-        """
-        super(TransformerEncoder, self).__init__()
-        self.embed_size = embed_dim
-        self.device = device
-        self.word_embedding = nn.Embedding(src_vocab_size, embed_dim)
-        self.position_embedding = nn.Embedding(max_length, embed_dim)
-
-        self.layers = nn.ModuleList(
-            [
-                TransformerBlock(
-                    embed_dim,
-                    heads,
-                    dropout=dropout,
-                    exp_factor=exp_factor,
-                )
-                for _ in range(num_layers)
-            ]
-        )
-
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Input tensor.
-            mask: Mask tensor.
-        """
-        N, seq_length = x.shape
-        positions = torch.arange(0, seq_length).expand(N, seq_length).to(self.device)
-        out = self.dropout(self.word_embedding(x) + self.position_embedding(positions))
-
-        print(out.shape)
-
-        for layer in self.layers:
-            out = layer(out, out, out, mask)
-
-        return out
-    
-
-class DecoderBlock(nn.Module):
-    """Transformer decoder block."""
-    def __init__(self, embed_dim: int, heads: int, exp_factor: int, dropout: float, device: torch.device):
-        super(DecoderBlock, self).__init__()
-        self.norm = nn.LayerNorm(embed_dim)
-        self.attention = MultiHeadAttention(embed_dim, heads)
-        self.transformer_block = TransformerBlock(
-            embed_dim, heads, exp_factor, dropout
-        )
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor, k: torch.Tensor, v: torch.Tensor, src_mask: torch.Tensor, trg_mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Input tensor.
-            key: Keys.
-            value: Values.
-            src_mask: Source mask.
-            trg_mask: Target mask.
-        """
-        attention = self.attention(x, x, x, trg_mask)
-        query = self.dropout(self.norm(attention + x))
-        out = self.transformer_block(query, k, v, src_mask)
-        return out
-    
-
-class TransformerDecoder(nn.Module):
-    """Transformer decoder module."""
-    def __init__(
-            self,
-            vocab_size: int,
-            embed_dim: int,
-            num_layers: int,
-            heads: int,
-            exp_factor: int,
-            dropout: float,
-            device: torch.device,
-            max_length: int,
-    ):
-        """
-        Args:
-            trg_vocab_size: Target vocabulary size.
-            embed_dim: Embedding dimension.
-            num_layers: Number of layers.
-            heads: Number of attention heads.
-            exp_factor: MLP dimension expansion factor.
-            dropout: Dropout rate.
-            device: Device.
-            max_length: Maximum sequence length.
-        """
-        super(TransformerDecoder, self).__init__()
-        self.device = device
-        self.word_embedding = nn.Embedding(vocab_size, embed_dim)
-        self.position_embedding = nn.Embedding(max_length, embed_dim)
-
-        self.layers = nn.ModuleList(
-            [
-                DecoderBlock(embed_dim, heads, exp_factor, dropout, device)
-                for _ in range(num_layers)
-            ]
-        )
-        self.fc_out = nn.Linear(embed_dim, vocab_size)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor, enc_out: torch.Tensor, src_mask: torch.Tensor, trg_mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Input tensor.
-            enc_out: Encoder output (used as keys and values).
-            src_mask: Source mask.
-            trg_mask: Target mask.
-        """
-        N, seq_length = x.shape
-        positions = torch.arange(0, seq_length).expand(N, seq_length).to(self.device)
-        x = self.dropout(self.word_embedding(x) + self.position_embedding(positions))
-
-        for layer in self.layers:
-            x = layer(x, enc_out, enc_out, src_mask, trg_mask)
-
-        out = self.fc_out(x)
-
-        return out
-        
-
-    
 
 class Transformer(nn.Module):
-    """Transformer sequence-to-sequence model."""
+    """Transformer module (https://arxiv.org/pdf/1706.03762)"""
     def __init__(
-            self,
-            src_vocab_size: int,
-            trg_vocab_size: int,
-            src_pad_idx: int,
-            trg_pad_idx: int,
-            embed_dim: int = 512,
-            num_layers: int = 6,
-            exp_factor: int = 4,
-            heads: int = 8,
-            dropout: float = 0.,
-            device: torch.device = "cpu",
-            max_length: int = 100,
+        self,
+        vocab_size: int,
+        max_len: int,
+        attn_layers: AttentionLayers,
+        dropout: float = 0.,
     ):
-        """
-        Args:
-            src_vocab_size: Source vocabulary size.
-            trg_vocab_size: Target vocabulary size.
-            src_pad_idx: Source padding index.
-            trg_pad_idx: Target padding index.
-            embed_dim: Embedding dimension.
-            num_layers: Number of layers.
-            exp_factor: MLP dimension expansion factor.
-            heads: Number of attention heads.
-            dropout: Dropout rate.
-            device: Device.
-            max_length: Maximum sequence length.
-        """
+        super().__init__()
+        assert isinstance(attn_layers, AttentionLayers), 'Unrecognised class for attn_layers.'
 
-        super(Transformer, self).__init__()
+        # Embedding dim and max sequence length
+        embed_dim = attn_layers.embed_dim
+        self.max_len = max_len
 
-        self.encoder = TransformerEncoder(
-            src_vocab_size,
-            embed_dim,
-            num_layers,
-            heads,
-            device,
-            exp_factor,
-            dropout,
-            max_length,
-        )
+        # Transformer modules: token/pos embeddings, dropout, normalisation, attention layers
+        self.token_embedding = nn.Embedding(vocab_size, embed_dim)
+        self.pos_embedding = PositionalEmbedding(embed_dim, max_len)
+        self.embed_dropout = nn.Dropout(dropout)
+        self.norm = nn.LayerNorm(embed_dim)
+        self.attn_layers = attn_layers
 
-        self.decoder = TransformerDecoder(
-            trg_vocab_size,
-            embed_dim,
-            num_layers,
-            heads,
-            exp_factor,
-            dropout,
-            device,
-            max_length,
-        )
+        self.init_weights() # Initialise token embedding weights
 
-        self.src_pad_idx = src_pad_idx
-        self.trg_pad_idx = trg_pad_idx
-        self.device = device
+        # Projection to logits
+        self.to_logits = nn.Linear(embed_dim, vocab_size)
 
-    def make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            src: Source tensor.
-        """
-        src_mask = (src != self.src_pad_idx).unsqueeze(1).unsqueeze(2)
-        return src_mask.to(self.device)
+    def init_weights(self):
+        nn.init.normal_(self.token_embedding.weight, std=0.02)
 
-    def make_trg_mask(self, trg: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            trg: Target tensor.
-        """
-        N, trg_len = trg.shape
-        trg_mask = torch.tril(torch.ones(trg_len, trg_len)).expand(
-            N, 1, trg_len, trg_len
-        )
-        return trg_mask.to(self.device)
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor = None,
+        return_embeddings: bool = False,
+        return_attn: bool = False,
+        **kwargs   
+    ) -> torch.Tensor:
+        
+        # Sum the token and position embeddings, apply dropout
+        x = self.token_embedding(x)
+        x = x + self.pos_embedding(x)
+        x = self.embed_dropout(x)
 
-    def forward(self, src: torch.Tensor, trg: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            src: Source tensor.
-            trg: Target tensor.
-        """
-        src_mask = self.make_src_mask(src)
-        trg_mask = self.make_trg_mask(trg)
-        enc_src = self.encoder(src, src_mask)
-        out = self.decoder(trg, enc_src, src_mask, trg_mask)
+        # Pass through attention layers and normalise
+        x, intermediates = self.attn_layers(x, mask=mask, return_hidden=True, **kwargs)
+        x = self.norm(x)
+
+        # Convert to logits
+        out = self.to_logits(x) if not return_embeddings else x
+        
+        # Check if attention maps should be returned
+        if return_attn:
+            attn_maps = list(map(lambda t: t['post_softmax_attn'], intermediates['attn_intermediates']))
+            return out, attn_maps
+
         return out
+
+
+class AutoRegressiveDecoder(nn.Module):
+    """Auto-regressive transformer decoder for sequence generation."""
+    def __init__(self, net: Transformer):
+        super().__init__()
+        self.net = net
+        self.max_len = net.max_len
+    
+    @torch.no_grad()
+    def generate(
+        self, 
+        start_tokens: torch.Tensor, 
+        eos_tok: int, 
+        max_len: int, 
+        temp: float = 1.,
+        **kwargs
+    ) -> torch.Tensor:
+        
+        tr, device = self.net.training, start_tokens.device
+        start_tokens = start_tokens[None, :] if start_tokens.ndim == 1 else start_tokens
+        B, T = start_tokens.shape # Get batch size and sequence length
+
+        self.net.eval()
+        output = start_tokens
+
+        # Set mask to True for all tokens if not provided
+        mask = kwargs.pop('mask', torch.full_like(output, True, device=device, dtype=torch.bool))
+
+        for i in range(max_len):
+            print(i)
+            x = output[:, -self.max_len:]
+            mask = mask[:, -self.max_len:]
+
+            # Get logits for last token
+            logits = self.net(x, mask=mask, **kwargs)[:, -1, :] 
+            topk_logits = topk(logits)
+
+            # Sample next tokens
+            probs = F.softmax(topk_logits / temp, dim=-1)
+            next_tokens = torch.multinomial(probs, 1)
+
+            # Concatenate to output and update mask
+            output = torch.cat((output, next_tokens), dim=-1)
+            mask = F.pad(mask, (0, 1), value=True)
+
+            # Break if all sequences have reached eos_token (CHECK THIS)
+            if eos_tok is not None and (output == eos_tok).any(dim=1).all():
+                break
+        
+        generated_tokens = output[:, T:]
+        generated_tokens = generated_tokens.squeeze(0) if start_tokens.ndim == 1 else generated_tokens
+        
+        self.net.train(tr)
+        return generated_tokens
+
+    def forward(
+        self, 
+        x: torch.Tensor, 
+        mask: torch.Tensor = None, 
+        return_out: bool = False, 
+        **kwargs
+    ) -> torch.Tensor:
+        
+        # Split x into input and output sequences (offset by one)
+        x_in = x[:, :-1]
+        x_out = x[:, 1:]
+
+        if mask is not None and mask.shape[1] == x.shape[1]:
+            mask = mask[:, :-1]
+
+        out = self.net(x_in, mask=mask, **kwargs)
+        loss = F.cross_entropy(out.transpose(1, 2), x_out)
+
+        if return_out:
+            return loss, out
+
+        return loss
     
 
-if __name__ == '__main__':
-    device = "cpu"
-    x = torch.tensor([[1, 5, 6, 4, 4], [1, 8, 7, 3, 4]]).to(device)
-    trg = torch.tensor([[1, 7, 4, 3, 5, 9, 2, 0], [1, 5, 6, 2, 0, 0, 0, 0]]).to(device)
+def create_decoder(config: dict):
+    """Create a TransformerDecoder from a config dict."""
+    assert 'max_length' in config, 'max_length not loaded into config file!'
+    assert 'vocab_size' in config, 'vocab_size not loaded into config file!'
 
-    src_pad_idx = 0
-    trg_pad_idx = 0
-    src_vocab_size = 10
-    trg_vocab_size = 10
-    model = Transformer(src_vocab_size, trg_vocab_size, src_pad_idx, trg_pad_idx).to(device)
-    # print(trg[:, :-1])
-    out = model(x, trg[:, :-1])
-    # print(out.shape)
-    # print(out)
+    max_length = config['max_length']
+    vocab_size = config['vocab_size']
+    decoder_args = config['decoder']
+    ff_kwargs = {
+        'glu': config['glu'],
+        'exp_factor': decoder_args['exp_factor']
+    }
+    dec_layers = DecoderLayers(
+        embed_dim=decoder_args['embed_dim'],
+        num_layers=decoder_args['num_layers'],
+        heads=decoder_args['heads'],
+        cross_attend=decoder_args['cross_attend'],
+        **ff_kwargs
+    )
+    transformer = Transformer(
+        vocab_size=vocab_size,
+        max_len=max_length,
+        attn_layers=dec_layers,
+        dropout=decoder_args['dropout']
+    )
+    return AutoRegressiveDecoder(net=transformer)
+
+# def create_decoder(config: dict):
+#     """Create a TransformerDecoder from a config dict."""
+#     assert 'max_length' in config, 'max_length not loaded into config file!'
+#     assert 'vocab_size' in config, 'vocab_size not loaded into config file!'
+
+#     # device = torch.device(config['device'])
+#     max_length = config['max_length']
+#     vocab_size = config['vocab_size']
+#     decoder_args = {
+#         'attn_on_attn': True,
+#         'cross_attend': True,
+#         'ff_glu': True,
+#         'rel_pos_bias': False,
+#         'use_scalenorm': False
+#     }
+
+#     return CustomARWrapper(
+#         XTransformerWrapper(
+#             num_tokens=vocab_size,
+#             max_seq_len=max_length,
+#             attn_layers=XDecoder(
+#                 dim=256,
+#                 depth=4,
+#                 heads=8,
+#                 **decoder_args
+#             )),
+#         pad_value=999,
+#         ignore_index=999
+#         )
