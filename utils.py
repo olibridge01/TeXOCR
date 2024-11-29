@@ -8,14 +8,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-# from TeXOCR.model import VisionEncoder, TransformerDecoder, OCRModel, AutoRegressiveTransformer, Encoder, Decoder, Transformer
-# from TeXOCR.hybrid_encoder import CustomVisionTransformer
-# from TeXOCR.x_decoder import CustomARWrapper
-
-
 from einops import repeat
-
-# from x_transformers import TransformerWrapper, Decoder
 
 def exists(x):
     """Check for existence of x."""
@@ -39,23 +32,6 @@ def alphabetize_config(config: dict) -> dict:
     with open('config.yml', 'w') as f:
         yaml.dump(config, f)
     return config
-
-# def create_encoder(config: dict) -> VisionEncoder:
-#     """Create a VisionEncoder from a config dict."""
-#     batch_size = config['batch_size']
-#     patch_size = config['patch_size']
-#     encoder_args = config['encoder']
-#     device = torch.device(config['device'])
-
-#     encoder = VisionEncoder(
-#         patch_size=patch_size,
-#         batch_size=batch_size,
-#         device=device,
-#         **encoder_args
-#     )
-
-#     return encoder
-
 
 def count_parameters(model: nn.Module) -> int:
     """Count the number of parameters in a model."""
