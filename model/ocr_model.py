@@ -58,30 +58,7 @@ class OCRModel(nn.Module):
             temp=temp,
             enc=enc
         )
-
     
-
-
-        # trg_tensor = torch.tensor([start_token] * src.shape[0]).unsqueeze(1).to(self.device)
-        # seen_eos = torch.tensor([False] * src.shape[0]).to(self.device)
-
-        # for i in range(max_length):
-            
-        #     # For generations, target mask is not needed. Generate tensor for target mask
-
-
-        #     out = self.decoder(trg_tensor, enc_out, src_mask=None, trg_mask=None)
-
-        #     out = out.argmax(2)[:, -1].unsqueeze(1)
-
-        #     trg_tensor = torch.cat((trg_tensor, out), 1)
-
-        #     seen_eos |= (out == eos_token).flatten()
-
-        #     if seen_eos.all():
-        #         break
-
-        # return trg_tensor
 
 def create_model(config: dict) -> OCRModel:
     """Create an OCRModel from a configuration file."""
@@ -101,45 +78,3 @@ def create_model(config: dict) -> OCRModel:
     )
 
     return model
-    
-if __name__ == "__main__":
-    
-
-    patch_size = 16
-    n_channels = 3
-    batch_size = 64
-    trg_vocab_size = 256
-    src_pad_idx = 0
-    trg_pad_idx = 0
-    embed_dim = 512
-    num_layers = 6
-    exp_factor = 4
-    heads = 8
-    dropout = 0.
-    device = torch.device("cpu")
-    max_length = 100
-
-    model = OCRModel(
-        patch_size,
-        n_channels,
-        batch_size,
-        trg_vocab_size,
-        src_pad_idx,
-        trg_pad_idx,
-        embed_dim,
-        num_layers,
-        exp_factor,
-        heads,
-        dropout,
-        device,
-        max_length
-    )
-
-    test_img = torch.randn((64, 3, 224, 224))
-    test_target = torch.randint(0, 256, (64, 42))
-
-    out = model(test_img, test_target)
-
-    print(out.shape)
-
-    
