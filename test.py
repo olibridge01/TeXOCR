@@ -13,96 +13,63 @@ from tqdm import tqdm
 from TeXOCR.model import OCRModel, create_modelTeXOCR
 from TeXOCR.utils import load_config, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
 from TeXOCR.data_wrangling.dataset import ImagePadding, ImageDataset, BatchCollator, BucketBatchSampler, Invert, load_datasets, create_dataloader
+from TeXOCR.eval.eval import batch_acc
 
 
 def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, test_set, verbose: bool = True):
     """Test the TeXOCR model."""
     model.eval()
 
-    test_loss = 0
+    # test_loss = 0
     test_acc = 0
     n_test = 0
 
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
 
     with torch.no_grad():
         for i, (img, trg) in enumerate(tqdm(test_loader, desc='Testing')):
 
-            # if i in [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]:
-            #     print(trg)
-            #     print(trg.shape)
-            #     print(img.shape)
+            img = img.to(device)
+            trg = trg.to(device)
+            print(trg.shape)
+            pred = model.generate(max_len=276, src=img)
 
-            #     # Plot first image in the batch
-            #     plt.imshow(img[10].permute(1, 2, 0), cmap='gray')
-            #     plt.colorbar()
+            acc = batch_acc(pred, trg, pad_token=999)
+            print(f'Batch accuracy: {acc:.3f}')
+            test_acc += acc
 
-            #     # Plot 16*16 grid of patches on top of the image
-            #     for j in range(0, 160, 16):
-            #         for k in range(0, 1008, 16):
-            #             plt.plot([k, k+16], [j, j], color='r', linewidth=0.5)
-            #             plt.plot([k, k+16], [j+16, j+16], color='r', linewidth=0.5)
-            #             plt.plot([k, k], [j, j+16], color='r', linewidth=0.5)
-            #             plt.plot([k+16, k+16], [j, j+16], color='r', linewidth=0.5)
+            for j in range(1):
 
-            #     plt.savefig(f'img_{i}.png')
-            #     plt.close()
+                target = trg[j]
+                prediction = pred[j]
 
-            if i == 21:
+                eos_index = (target==997).nonzero().squeeze().int().item()
 
-                img = img.to(device)
-                trg = trg.to(device)
-                print(trg.shape)
-                pred = model.generate(max_len=270, src=img)
+                print(eos_index)
+                print(prediction.shape)
+                print(target.shape)
 
-                for j in range(1):
+                # corr = (target[:eos_index+1] == prediction[:eos_index+1]).sum() / (eos_index+1)
+                # print(f'{j}, Acc: {corr:.3f}')
 
-                    target = trg[j]
-                    prediction = pred[j]
+                print(prediction[:eos_index+1])
+                print(target)
 
-                    eos_index = (target==997).nonzero().squeeze().int().item()
+                print(test_set.tokenizer.decode(prediction[:eos_index+1].tolist()))
+                print(test_set.tokenizer.decode(target.tolist()))
 
-                    print(eos_index)
-                    print(prediction.shape)
-                    print(target.shape)
-
-                    # corr = (target[:eos_index+1] == prediction[:eos_index+1]).sum() / (eos_index+1)
-                    # print(f'{j}, Acc: {corr:.3f}')
-
-                    print(prediction[:eos_index+1])
-                    print(target)
-
-                    print(test_set.tokenizer.decode(prediction[:eos_index+1].tolist()))
-                    print(test_set.tokenizer.decode(target.tolist()))
-
-            #     exit()
-
-            # if verbose:
-            #     print(f'Batch {i+1}/{len(test_loader)}', end='\r')
-
-    #         img = img.to(device)
-    #         trg = trg.to(device)
-
-    #         out = model(img, trg[:, :-1])
-
-    #         loss = F.cross_entropy(out.reshape(-1, out.shape[-1]), trg[:, 1:].reshape(-1), ignore_index=999)
-    #         test_loss += loss.item()
-
-    #         acc = (out.argmax(2) == trg[:, 1:]).sum() / (trg[:, 1:] != 999).sum()
-    #         test_acc += acc.item()
-
-    #         n_test += 1
+            n_test += 1
 
     # test_loss /= n_test
-    # test_acc /= n_test
+    test_acc /= n_test
 
     if verbose:
-        print(f'Test loss: {test_loss:.4f}')
+        # print(f'Test loss: {test_loss:.4f}')
         print(f'Test accuracy: {test_acc:.4f}')
 
     model.train()
 
-    return test_loss, test_acc
+    return test_acc
 
 def single_prediction(model: OCRModel, test_loader: DataLoader, device: torch.device):
     """Make a single prediction."""

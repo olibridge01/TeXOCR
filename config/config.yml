@@ -34,6 +34,7 @@ save_dir: checkpoints
 save_freq: 1
 seed: 42
 src_pad_idx: 1
+test_batchsize: 24
 test_dir: data/test
 test_split: 0.1
 train_dir: data/train

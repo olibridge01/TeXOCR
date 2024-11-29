@@ -76,19 +76,12 @@ def train_model(train_loader: DataLoader, val_loader: DataLoader, config: dict, 
             
             optimizer.zero_grad()
             
-            # output = model(images, targets[:, :-1])
-            
-            # output = output.transpose(1, 2)
-            # targets = targets[:, 1:]
-            
-            # loss = criterion(output, targets)
-
             loss = model(images, targets)
             
             loss.backward()
             optimizer.step()
 
-            print(f'Loss: {loss.item()}')
+            # print(f'Loss: {loss.item()}')
             
             epoch_loss += loss.item()
         
