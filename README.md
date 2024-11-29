@@ -37,7 +37,7 @@ For package management, set up a conda environment and install the required pack
   pip install -r requirements.txt
   ```
 
-For dataset rendering, `latex`, `dvipng`, and `imagemagick` are required. To install these dependencies, follow the instructions in the [`data_wrangling/`](data_wrangling/README.md) directory.
+For dataset rendering, `latex`, `dvipng`, and `imagemagick` are required. To install these dependencies, follow the instructions in the [`data_wrangling/`](data_wrangling/) directory.
 
 
 ### Data
