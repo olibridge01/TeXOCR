@@ -114,7 +114,7 @@ class ImageDataset(Dataset):
     eos_char = '<EOS>'
     # fixed_height = 160
 
-    def __init__(self, root_dir: str = None, tokenizer_path: str = None, dataset_size: int = None, patch_size: int = 16):
+    def __init__(self, root_dir: str = None, tokenizer_path: str = None, dataset_size: int = None):
         """
         Args:
             root_dir: Path to the root directory containing the image data.
@@ -364,51 +364,3 @@ def create_dataloader(dataset: ImageDataset, config: dict) -> torch.utils.data.D
         seed=seed
     )
     return DataLoader(dataset, batch_sampler=sampler, collate_fn=collate_fn)
-
-    
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Dataset utilities.")
-    parser.add_argument('-c', '--config', type=str, default='config/config.yml', help='Path to the configuration file.')
-    parser.add_argument('--split', type=str, default='train', help='Split to create Dataset from.')
-    parser.add_argument('-s', '--save', type=str, default='dataset.pkl', help='Path to save the dataset.')
-    args = parser.parse_args()
-
-    assert args.split in ['train', 'val', 'test'], "Split must be one of 'train', 'val', or 'test'."
-    return args
-
-
-def main(args: argparse.Namespace) -> None:
-    """Extract the dataset and create the splits."""
-    start = time.time()
-
-    config = load_config(args.config) # Get configs
-
-    if args.split == 'train':
-        root_dir = config['train_dir']
-    elif args.split == 'val':
-        root_dir = config['val_dir']
-    else:
-        root_dir = config['test_dir']
-
-    # Load the dataset
-    dataset = ImageDataset(
-        root_dir=root_dir,
-        tokenizer_path=config['tokenizer_path'], 
-        dataset_size=config['dataset_size'], 
-        patch_size=config['patch_size']
-    )
-
-    # Save dataset
-    dataset.save(f"{args.save}")
-
-    print(f"Dataset of size {len(dataset)} saved to {args.save}.")
-    end = time.time()
-    print(f"Time taken: {end - start:.2f} seconds.")
-
-    return
-
-
-if __name__ == '__main__':
-    args = parse_args()
-    main(args)

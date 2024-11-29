@@ -1,5 +1,5 @@
 dpi: 125
-num_equations: 1000
+num_equations: 100000
 num_processes: 8
 patch_size: 16
 seed: 42
@@ -7,3 +7,7 @@ splits:
   train: 0.8
   test: 0.15
   val: 0.05
+test_dir: data/test
+tokenizer_path: tokenizer/tokenizer_clean_1k.txt
+train_dir: data/train
+val_dir: data/val

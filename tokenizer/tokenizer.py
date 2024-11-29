@@ -274,7 +274,7 @@ def main(args: argparse.Namespace):
     tokenizer = RegExTokenizer(vocab_size=args.vocab_size, special_tokens=special_tokens)
 
     if args.train:
-        with open('data/labels.txt', 'r') as f:
+        with open(args.train_data, 'r') as f:
             text = f.read()[:5000000]
         
         tokenizer.train(text, verbose=args.verbose)
