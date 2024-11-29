@@ -10,9 +10,9 @@ from torchvision import transforms
 import time as time
 from tqdm import tqdm
 
-from TeXOCR.model import OCRModel, create_model
+from TeXOCR.model import OCRModel, create_modelTeXOCR
 from TeXOCR.utils import load_config, count_parameters, get_optimizer, get_loss_fn, save_checkpoint, load_checkpoint
-from TeXOCR.dataset import ImagePadding, ImageDataset, BatchCollator, BucketBatchSampler, Invert, load_datasets, create_dataloader
+from TeXOCR.data_wrangling.dataset import ImagePadding, ImageDataset, BatchCollator, BucketBatchSampler, Invert, load_datasets, create_dataloader
 
 
 def test_model(test_loader: DataLoader, model: OCRModel, device: torch.device, test_set, verbose: bool = True):
