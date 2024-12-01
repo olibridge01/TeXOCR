@@ -1,13 +1,19 @@
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?logo=python&logoColor=white)](#)
+[![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C.svg?logo=pytorch&logoColor=white)](#)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009485.svg?logo=fastapi&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-2496ED.svg?logo=docker&logoColor=white)](#)
+
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/e4435ca7-6d5f-4c3c-8a6d-0bef4adfb4f7" width="65%"/>
 </p>
 
-
 ## Image to $\LaTeX$: Optical Character Recognition with PyTorch
 
 
 This repository contains an OCR (Optical Character Recognition) model for recognizing LaTeX code from images. This repository allows for custom dataset generation, training, and evaluation of the model. The implementation is written with PyTorch.
+
+I have also written a web application to get fast predictions of LaTeX code from images. The app is built with a FastAPI backend to serve the model and a depiction of the UI is shown below:
 
 ![texocr](https://github.com/user-attachments/assets/7cfbc643-ee16-4295-8adf-897ffd8c04ef)
 
