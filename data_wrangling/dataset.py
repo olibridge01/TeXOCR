@@ -158,11 +158,7 @@ class ImageDataset(Dataset):
             print(f"Max height: {self.max_height}, Max width: {self.max_width}")
             print(f"Max sequence length: {self.max_seq_len}")
 
-            self.img_transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Grayscale(num_output_channels=1),
-                Invert(),
-            ])
+            self.img_transform = img_transform
 
     def _get_dataset_size(self) -> int:
         """Get the size of the dataset from the number of lines in the labels file."""
@@ -364,3 +360,10 @@ def create_dataloader(dataset: ImageDataset, config: dict) -> torch.utils.data.D
         seed=seed
     )
     return DataLoader(dataset, batch_sampler=sampler, collate_fn=collate_fn)
+
+# Image transformation
+img_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Grayscale(num_output_channels=1),
+    Invert(),
+])

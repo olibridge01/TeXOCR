@@ -95,7 +95,7 @@ class AutoRegressiveDecoder(nn.Module):
         mask = kwargs.pop('mask', torch.full_like(output, True, device=device, dtype=torch.bool))
 
         for i in range(max_len):
-            print(i)
+            # print(i)
             x = output[:, -self.max_len:]
             mask = mask[:, -self.max_len:]
 

@@ -1,3 +1,4 @@
+import re
 import yaml
 import math
 from typing import Tuple, Dict, List
@@ -61,13 +62,21 @@ def save_checkpoint(model: nn.Module, optimizer: optim.Optimizer, epoch: int, sa
 
 def load_checkpoint(model: nn.Module, optimizer: optim.Optimizer, device: torch.device, load_path: str) -> Tuple[nn.Module, optim.Optimizer, int]:
     """Load a model checkpoint."""
-    checkpoint = torch.load(load_path, map_location=device)
+    checkpoint = torch.load(load_path, map_location=device, weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     epoch = checkpoint['epoch']
     print('Checkpoint loaded!')
 
     return model, optimizer, epoch
+
+def process_output(output: str) -> str:
+    """Postprocessing for the LaTeX output to make it more human-readable."""
+    output = re.sub(r'(\\[a-zA-Z]+)\s+([a-zA-Z0-9])', r'\1<SPACE>\2', output)
+    output = re.sub(r'\s+', '', output)
+    output = output.replace('<SPACE>', ' ')
+
+    return output
 
 def max_negative_val(x):
     """Maximum negative value for a tensor."""

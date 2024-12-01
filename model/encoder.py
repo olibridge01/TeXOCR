@@ -183,7 +183,7 @@ def create_encoder(config: dict):
         img_size=(160, 1008),
         patch_size=patch_size,
         in_channels=encoder_args['n_channels'],
-        embed_dim=config['embed_dim'],
+        embed_dim=encoder_args['embed_dim'],
         num_layers=encoder_args['num_layers'],
         heads=encoder_args['heads'],
         embed_layer=partial(HybridEmbedResNet, backbone_net=backbone_net),

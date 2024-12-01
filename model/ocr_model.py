@@ -1,9 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import transforms
+from PIL import Image
 
-from TeXOCR.model.encoder import create_encoder
-from TeXOCR.model.decoder import create_decoder
+# from TeXOCR.model.encoder import create_encoder
+from TeXOCR.model import create_encoder, create_decoder, PositionalEmbedding
+from TeXOCR.tokenizer import RegExTokenizer
+from TeXOCR.utils import load_config, process_output
+from TeXOCR.data_wrangling.dataset import img_transform
+
 
 class OCRModel(nn.Module):
     """TeXOCR model for image-to-LaTeX conversion."""
@@ -40,13 +46,13 @@ class OCRModel(nn.Module):
     @torch.no_grad()
     def generate(self, src: torch.Tensor, max_len: int, temp: float = 0.3):
 
-        # Get encoder embeddings and start tokens
+        # Get encoder embeddings and start tokens
         enc = self.encoder(src)
-        import matplotlib.pyplot as plt
-        plt.imshow(enc[0].detach().cpu().numpy())
-        plt.colorbar()
-        plt.savefig('enc.png')
-        plt.close()
+        # import matplotlib.pyplot as plt
+        # plt.imshow(enc[0].detach().cpu().numpy())
+        # plt.colorbar()
+        # plt.savefig('enc.png')
+        # plt.close()
 
         start_tokens = torch.LongTensor([self.bos_token] * src.shape[0]).unsqueeze(1).to(self.device)
 
@@ -59,6 +65,50 @@ class OCRModel(nn.Module):
             enc=enc
         )
     
+
+class TeXOCRWrapper(object):
+    """TeXOCR model wrapper for command-line inference and use in the web app."""
+    def __init__(self, config: dict):
+
+        # Load tokenizer
+        self.tokenizer = RegExTokenizer()
+        self.tokenizer.load(config['tokenizer_path'])
+
+        # Add vocab size to config
+        config['vocab_size'] = self.tokenizer.vocab_size
+
+        # Create model
+        self.model = create_model(config)
+        model_state_dict = torch.load(config['model_path'], map_location=config['device'], weights_only=True)
+
+        if 'decoder.net.pos_embedding.embedding.weight' in model_state_dict:
+            pos_embed_len, embed_dim = model_state_dict['decoder.net.pos_embedding.embedding.weight'].shape
+
+            # Re-adjust model to match the pos-embedding length
+            self.model.decoder.net.pos_embedding = PositionalEmbedding(embed_dim, pos_embed_len)
+
+        self.model.load_state_dict(model_state_dict)
+
+        self.img_transform = img_transform
+
+    def __call__(self, img: Image.Image, max_len: int = 350, temp: float = 0.3) -> str:
+        """Convert an image to LaTeX."""
+        # Convert to tensor and add batch dimension
+        img = self.img_transform(img)
+        img = img.unsqueeze(0).to(self.model.device)
+
+        # Generate LaTeX prediction
+        pred_tokens = self.model.generate(img, max_len=max_len, temp=temp)
+        
+        # Convert to list and strip the <EOS> token
+        out_tokens = pred_tokens.squeeze(0).tolist()[:-1]
+        out_str = self.tokenizer.decode(out_tokens)
+
+        # Post-process the output to remove appropriate whitespace
+        out_str = process_output(out_str)
+
+        return out_tokens, out_str
+
 
 def create_model(config: dict) -> OCRModel:
     """Create an OCRModel from a configuration file."""
@@ -78,3 +128,12 @@ def create_model(config: dict) -> OCRModel:
     )
 
     return model
+
+if __name__ == '__main__':
+
+    config = load_config('config/final_config.yml')
+    model = TeXOCRWrapper(config)
+
+    img = Image.open('data/val/images/eq_000833.png')
+
+    model(img)

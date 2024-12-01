@@ -1,6 +1,6 @@
 import torch
 
-def batch_acc(pred: torch.Tensor, target: torch.Tensor, eos_token: int, pad_token: int) -> float:
+def batch_acc(pred: torch.Tensor, target: torch.Tensor, pad_token: int) -> float:
     """
     Args:
         pred: Predicted token sequence tensor.
@@ -10,11 +10,11 @@ def batch_acc(pred: torch.Tensor, target: torch.Tensor, eos_token: int, pad_toke
     target_len = target.shape[1]
 
     if pred_len > target_len:
-        pad = torch.full((target.shape[0], pred.shape[1] - target.shape[1]), pad_token)
+        pad = torch.full((target.shape[0], pred.shape[1] - target.shape[1]), pad_token).to(target.device)
         target = torch.cat((target, pad), dim=1)
     elif pred_len < target_len:
         # Pad prediction with pad_token
-        pad = torch.full((pred.shape[0], target.shape[1] - pred.shape[1]), pad_token)
+        pad = torch.full((pred.shape[0], target.shape[1] - pred.shape[1]), pad_token).to(pred.device)
         pred = torch.cat((pred, pad), dim=1)
 
     print((pred != pad_token))
