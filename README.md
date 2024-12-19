@@ -20,7 +20,7 @@ I have also written a web application to get fast predictions of LaTeX code from
 ### Model Overview
 The model consists of an encoder-decoder architecture that is common for many current OCR systems. *TeXOCR* is based on the TrOCR model [[1]](#ref1) which utilises a Vision Transformer (ViT) [[2]](#ref2) encoder and a Transformer [[3]](#ref3) decoder. The model architecture is depicted in the figure below:
 
-![TeXOCR_model](https://github.com/user-attachments/assets/6f268b72-3566-4a04-875a-9ad925bdb22c)
+![TeXOCR_model](https://github.com/user-attachments/assets/de4a23d6-bed2-453f-9743-1b2b647ecbfd)
 
 
 The vision encoder receives images of LaTeX equations and processes them into a series of embeddings $\mathbf{z}^{(i)} \in \mathbb{R}^{d}$ for each of the $N$ patches. The embeddings are passed into a Transformer decoder along with sequences of tokenized LaTeX code. The decoder generates a probability distribution over the vocabulary of LaTeX tokens to sample the next token in the sequence. The solution is then generated in an autoregressive manner to yield an overall prediction.
