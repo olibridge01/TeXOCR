@@ -363,6 +363,8 @@ def create_dataloader(dataset: ImageDataset, config: dict) -> torch.utils.data.D
 
 # Image transformation
 img_transform = transforms.Compose([
+    transforms.RandomAffine(degrees=0, scale=(0.85, 1.05), interpolation=transforms.InterpolationMode.BILINEAR, fill=255),
+    # transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.6))], p=0.2),
     transforms.ToTensor(),
     transforms.Grayscale(num_output_channels=1),
     Invert(),

@@ -1,4 +1,5 @@
 import os
+import random
 import logging
 import argparse
 import imagesize
@@ -33,7 +34,7 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
     log_file = Path(image_dir) / f"{base_filename}.log"
     aux_file = Path(image_dir) / f"{base_filename}.aux"
 
-    # Create LaTeX document
+    # Create LaTeX document content. Equations in display mode with no label.
     tex_content = f"""
     \\documentclass[preview,border=1mm]{{standalone}}
     \\usepackage{{amsmath}}
@@ -41,7 +42,7 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
     \\usepackage{{amssymb}}
     \\usepackage[total={{16in, 8in}}]{{geometry}}
     \\begin{{document}}
-    ${equation}$
+    $\displaystyle {equation}$
     \\end{{document}}
     """
 
@@ -58,6 +59,7 @@ def render_latex(args: Tuple[str, str, int, int, int, int, list]) -> None:
             stderr=subprocess.PIPE,
         )
         # Convert DVI to PNG
+        dpi = random.randint(100,150)
         subprocess.run(
             ["dvipng", "-D", str(dpi), "-T", "tight", "-o", str(png_file), str(dvi_file)],
             check=True,
