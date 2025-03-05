@@ -13,9 +13,12 @@
 
 This repository contains an OCR (Optical Character Recognition) model for recognizing LaTeX code from images. This repository allows for custom dataset generation, training, and evaluation of the model. The implementation is written with PyTorch.
 
-I have also written a web application to get fast predictions of LaTeX code from images. The app is built with a FastAPI backend to serve the model and a depiction of the UI is shown below:
+I have also written a web application to get fast predictions of LaTeX code from images. The app is built with a FastAPI backend to serve the model.
 
-![texocr](https://github.com/user-attachments/assets/7cfbc643-ee16-4295-8adf-897ffd8c04ef)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/61670de1-ecca-4bd2-9092-b0d40eca4ccf" width="65%"/>
+  <img src="https://github.com/user-attachments/assets/3d2b1703-d343-4fb6-ad5f-e495fd17dd43" width="65%"/>
+</p>
 
 ### Model Overview
 The model consists of an encoder-decoder architecture that is common for many current OCR systems. *TeXOCR* is based on the TrOCR model [[1]](#ref1) which utilises a Vision Transformer (ViT) [[2]](#ref2) encoder and a Transformer [[3]](#ref3) decoder. The model architecture is depicted in the figure below:
